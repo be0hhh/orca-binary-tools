@@ -3,9 +3,9 @@
   "id": "lowlevel-tools",
   "publisher": "be0h",
   "name": "Assembly & Binary Tools",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "execution": "sandboxed-ui",
-  "description": "Assembly language syntax highlighting and binary inspector for low-level development. Highlighting for x86/x64, ARM/AArch64, and GAS assembly; interactive Hex Viewer & ELF/AR inspector for .o and .a files.",
+  "description": "Native & low-level development toolkit: assembly (x86, ARM, GAS) and C++ inline/template (.ipp, .inl, .tpp) syntax highlighting, plus interactive Binary Inspector & Hex Viewer for .o and .a files.",
   "license": "MIT",
   "repository": "https://github.com/be0h/orca-lowlevel-tools",
   "engines": {
@@ -36,6 +36,14 @@
         "path": "syntaxes/generic.tmLanguage.json",
         "configuration": "syntaxes/gas-configuration.json",
         "extensions": [".s", ".S"]
+      },
+      {
+        "id": "cpp-inlines",
+        "title": "C++ Inlines & Templates",
+        "scopeName": "source.cpp.inlines",
+        "path": "syntaxes/cpp.tmLanguage.json",
+        "configuration": "syntaxes/cpp-configuration.json",
+        "extensions": [".ipp", ".inl", ".tpp"]
       }
     ],
     "customEditors": [
