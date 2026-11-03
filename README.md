@@ -42,10 +42,10 @@ Visual custom editor for object files, static archives, shared libraries, and ex
 Clone directly into your Orca plugins directory:
 ```sh
 # Linux / macOS
-git clone https://github.com/be0hhh/orca-binary-tools.git ~/.orca/plugins/be0hhh.orca-binary-tools
+git clone https://github.com/be0hhh/orca-binary-tools.git ~/.orca/plugins/be0hhh.binary-tools
 
 # Windows
-git clone https://github.com/be0hhh/orca-binary-tools.git "%APPDATA%\orca\plugins\be0hhh.orca-binary-tools"
+git clone https://github.com/be0hhh/orca-binary-tools.git "%APPDATA%\orca\plugins\be0hhh.binary-tools"
 ```
 
 ---
