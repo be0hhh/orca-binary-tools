@@ -3,7 +3,7 @@
   "id": "orca-binary-tools",
   "publisher": "be0hhh",
   "name": "Binary & Assembly Tools",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "execution": "sandboxed-ui",
   "description": "Low-level binary inspection (ELF, AR archives, PE/COFF) with virtualized hex view, data inspector, and assembly syntax highlighting (x86/x64, ARM, GAS).",
   "license": "MIT",
@@ -22,7 +22,8 @@
         "extensions": [
           ".asm",
           ".inc"
-        ]
+        ],
+        "filenames": []
       },
       {
         "id": "asm-arm",
@@ -33,7 +34,8 @@
         "extensions": [
           ".arm",
           ".a64"
-        ]
+        ],
+        "filenames": []
       },
       {
         "id": "asm-generic",
@@ -43,7 +45,8 @@
         "configuration": "syntaxes/gas-configuration.json",
         "extensions": [
           ".s"
-        ]
+        ],
+        "filenames": []
       }
     ],
     "customEditors": [
@@ -65,8 +68,7 @@
         ],
         "entry": "editor/index.html",
         "priority": "default",
-        "contentKind": "bytes",
-        "frame": "isolated"
+        "contentKind": "bytes"
       }
     ]
   },
