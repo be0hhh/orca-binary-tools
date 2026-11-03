@@ -115,7 +115,7 @@ Sample files are included in `samples/`:
 
 This plugin is ready to be published as an official or community plugin:
 
-1. Create a GitHub repository named `orca-lowlevel-tools` under your account (e.g. `be0h/orca-lowlevel-tools`).
+1. Create a GitHub repository named `orca-lowlevel-tools` under your account (e.g. `be0hhh/orca-lowlevel-tools`).
 2. Push this plugin code to the repository.
 3. Add the GitHub repository topic: `orca-plugin`.
 4. Create a release tag, e.g. `v0.3.0`.

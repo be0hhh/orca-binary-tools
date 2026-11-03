@@ -1,13 +1,13 @@
 {
   "manifestVersion": 2,
   "id": "lowlevel-tools",
-  "publisher": "be0h",
+  "publisher": "be0hhh",
   "name": "Assembly & Binary Tools",
   "version": "0.3.0",
   "execution": "sandboxed-ui",
   "description": "Native & low-level development toolkit: assembly (x86, ARM, GAS) and C++ inline/template (.ipp, .inl, .tpp) syntax highlighting, plus interactive Binary Inspector & Hex Viewer for .o and .a files.",
   "license": "MIT",
-  "repository": "https://github.com/be0h/orca-lowlevel-tools",
+  "repository": "https://github.com/be0hhh/orca-lowlevel-tools",
   "engines": {
     "orca": ">=1.4.248"
   },
@@ -19,7 +19,9 @@
         "scopeName": "source.asm.x86",
         "path": "syntaxes/x86.tmLanguage.json",
         "configuration": "syntaxes/x86-configuration.json",
-        "extensions": [".asm"]
+        "extensions": [
+          ".asm"
+        ]
       },
       {
         "id": "asm-arm",
@@ -35,7 +37,10 @@
         "scopeName": "source.asm",
         "path": "syntaxes/generic.tmLanguage.json",
         "configuration": "syntaxes/gas-configuration.json",
-        "extensions": [".s", ".S"]
+        "extensions": [
+          ".s",
+          ".S"
+        ]
       },
       {
         "id": "cpp-inlines",
@@ -43,14 +48,25 @@
         "scopeName": "source.cpp.inlines",
         "path": "syntaxes/cpp.tmLanguage.json",
         "configuration": "syntaxes/cpp-configuration.json",
-        "extensions": [".ipp", ".inl", ".tpp"]
+        "extensions": [
+          ".ipp",
+          ".inl",
+          ".tpp"
+        ]
       }
     ],
     "customEditors": [
       {
         "id": "binary-inspector",
         "title": "Binary Inspector",
-        "extensions": [".o", ".a", ".bin", ".elf", ".so", ".dylib"],
+        "extensions": [
+          ".o",
+          ".a",
+          ".bin",
+          ".elf",
+          ".so",
+          ".dylib"
+        ],
         "entry": "editor/index.html",
         "priority": "default",
         "contentKind": "bytes"
