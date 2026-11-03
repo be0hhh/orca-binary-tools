@@ -1,0 +1,53 @@
+{
+  "manifestVersion": 2,
+  "id": "lowlevel-tools",
+  "publisher": "be0h",
+  "name": "Assembly & Binary Tools",
+  "version": "0.2.0",
+  "execution": "sandboxed-ui",
+  "description": "Assembly language syntax highlighting and binary inspector for low-level development. Highlighting for x86/x64, ARM/AArch64, and GAS assembly; interactive Hex Viewer & ELF/AR inspector for .o and .a files.",
+  "license": "MIT",
+  "repository": "https://github.com/be0h/orca-lowlevel-tools",
+  "engines": {
+    "orca": ">=1.4.248"
+  },
+  "contributes": {
+    "syntaxes": [
+      {
+        "id": "asm-x86",
+        "title": "x86 Assembly",
+        "scopeName": "source.asm.x86",
+        "path": "syntaxes/x86.tmLanguage.json",
+        "configuration": "syntaxes/x86-configuration.json",
+        "extensions": [".asm"]
+      },
+      {
+        "id": "asm-arm",
+        "title": "ARM Assembly",
+        "scopeName": "source.asm.arm",
+        "path": "syntaxes/arm.tmLanguage.json",
+        "configuration": "syntaxes/arm-configuration.json",
+        "extensions": []
+      },
+      {
+        "id": "asm-generic",
+        "title": "Assembly",
+        "scopeName": "source.asm",
+        "path": "syntaxes/generic.tmLanguage.json",
+        "configuration": "syntaxes/gas-configuration.json",
+        "extensions": [".s", ".S"]
+      }
+    ],
+    "customEditors": [
+      {
+        "id": "binary-inspector",
+        "title": "Binary Inspector",
+        "extensions": [".o", ".a", ".bin", ".elf", ".so", ".dylib"],
+        "entry": "editor/index.html",
+        "priority": "default",
+        "contentKind": "bytes"
+      }
+    ]
+  },
+  "capabilities": []
+}
