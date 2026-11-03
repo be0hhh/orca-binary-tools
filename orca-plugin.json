@@ -1,62 +1,46 @@
 {
-  "$schema": "https://raw.githubusercontent.com/stablyai/orca/main/docs/schemas/plugins/orca-plugin.v2.schema.json",
   "manifestVersion": 2,
-  "id": "lowlevel-tools",
+  "id": "orca-binary-tools",
   "publisher": "be0hhh",
-  "name": "Assembly & Binary Tools",
-  "version": "0.3.1",
+  "name": "Binary & Assembly Tools",
+  "version": "1.0.0",
   "execution": "sandboxed-ui",
-  "description": "Native & low-level development toolkit: assembly (x86, ARM, GAS) and C++ inline/template (.ipp, .inl, .tpp) syntax highlighting, plus interactive Binary Inspector & Hex Viewer for .o and .a files.",
+  "description": "Low-level binary inspection (ELF, AR archives, PE/COFF) with virtualized hex view, data inspector, and assembly syntax highlighting (x86/x64, ARM, GAS).",
   "license": "MIT",
-  "repository": "https://github.com/be0hhh/orca-lowlevel-tools",
+  "repository": "https://github.com/be0hhh/orca-binary-tools",
   "engines": {
-    "orca": ">=1.4.245"
+    "orca": ">=1.4.248"
   },
   "contributes": {
     "syntaxes": [
       {
         "id": "asm-x86",
-        "title": "x86 Assembly",
-        "scopeName": "source.asm.x86",
-        "path": "syntaxes/x86.tmLanguage.json",
-        "configuration": "syntaxes/x86-configuration.json",
+        "title": "Assembly (x86 / x86_64)",
         "extensions": [
           ".asm",
-          ".nasm"
-        ]
+          ".inc"
+        ],
+        "grammar": "syntaxes/x86.tmLanguage.json",
+        "configuration": "syntaxes/x86-configuration.json"
       },
       {
         "id": "asm-arm",
-        "title": "ARM Assembly",
-        "scopeName": "source.asm.arm",
-        "path": "syntaxes/arm.tmLanguage.json",
-        "configuration": "syntaxes/arm-configuration.json",
+        "title": "Assembly (ARM / AArch64)",
         "extensions": [
           ".arm",
           ".a64"
-        ]
+        ],
+        "grammar": "syntaxes/arm.tmLanguage.json",
+        "configuration": "syntaxes/arm-configuration.json"
       },
       {
         "id": "asm-generic",
-        "title": "Assembly",
-        "scopeName": "source.asm",
-        "path": "syntaxes/generic.tmLanguage.json",
-        "configuration": "syntaxes/gas-configuration.json",
+        "title": "Assembly (GAS / AT&T)",
         "extensions": [
           ".s"
-        ]
-      },
-      {
-        "id": "cpp-inlines",
-        "title": "C++ Inlines & Templates",
-        "scopeName": "source.cpp.inlines",
-        "path": "syntaxes/cpp.tmLanguage.json",
-        "configuration": "syntaxes/cpp-configuration.json",
-        "extensions": [
-          ".ipp",
-          ".inl",
-          ".tpp"
-        ]
+        ],
+        "grammar": "syntaxes/generic.tmLanguage.json",
+        "configuration": "syntaxes/gas-configuration.json"
       }
     ],
     "customEditors": [
@@ -65,15 +49,21 @@
         "title": "Binary Inspector",
         "extensions": [
           ".o",
+          ".obj",
           ".a",
+          ".lib",
+          ".so",
+          ".dylib",
+          ".dll",
+          ".exe",
           ".bin",
           ".elf",
-          ".so",
-          ".dylib"
+          ".out"
         ],
         "entry": "editor/index.html",
         "priority": "default",
-        "contentKind": "bytes"
+        "contentKind": "bytes",
+        "frame": "isolated"
       }
     ]
   },
