@@ -16,31 +16,34 @@
       {
         "id": "asm-x86",
         "title": "Assembly (x86 / x86_64)",
+        "scopeName": "source.asm.x86",
+        "path": "syntaxes/x86.tmLanguage.json",
+        "configuration": "syntaxes/x86-configuration.json",
         "extensions": [
           ".asm",
           ".inc"
-        ],
-        "grammar": "syntaxes/x86.tmLanguage.json",
-        "configuration": "syntaxes/x86-configuration.json"
+        ]
       },
       {
         "id": "asm-arm",
         "title": "Assembly (ARM / AArch64)",
+        "scopeName": "source.asm.arm",
+        "path": "syntaxes/arm.tmLanguage.json",
+        "configuration": "syntaxes/arm-configuration.json",
         "extensions": [
           ".arm",
           ".a64"
-        ],
-        "grammar": "syntaxes/arm.tmLanguage.json",
-        "configuration": "syntaxes/arm-configuration.json"
+        ]
       },
       {
         "id": "asm-generic",
         "title": "Assembly (GAS / AT&T)",
+        "scopeName": "source.asm",
+        "path": "syntaxes/generic.tmLanguage.json",
+        "configuration": "syntaxes/gas-configuration.json",
         "extensions": [
           ".s"
-        ],
-        "grammar": "syntaxes/generic.tmLanguage.json",
-        "configuration": "syntaxes/gas-configuration.json"
+        ]
       }
     ],
     "customEditors": [
