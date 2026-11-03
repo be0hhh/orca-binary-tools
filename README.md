@@ -18,7 +18,7 @@ Visual custom editor for object files, static archives, shared libraries, and ex
 - **Archive Members Tab**: Complete archive viewer for static libraries (`.a`, `.lib`). Inspect individual `.o` object files directly or view in hex. Shows deterministic build timestamps cleanly with navigation back to the archive.
 - **Strings Extractor**: Extract ASCII/UTF-8 strings (length ≥ 4) with search filtering and direct offset jumping.
 - **Interactive Data Inspector**: Collapsible side panel showing 8-bit, 16-bit, 32-bit, 64-bit integers (Little & Big Endian), Float32, Float64, binary bitfield, and ASCII representation for any selected byte.
-- **Large File Support**: Handles files over 50 MB smoothly via interactive Drag & Drop and chunked streaming.
+- **Large File Support**: Handles large binaries smoothly via chunked streaming and responsive virtualized scrolling.
 
 ### 2. Assembly Syntax Highlighting
 - **x86 & x86_64** (`.asm`, `.inc`): Intel and AT&T syntax, registers (`rax`, `r15`, `ymm0`, `zmm0`), instructions (AVX-512, SSE, VMX, AMX), NASM/FASM directives.

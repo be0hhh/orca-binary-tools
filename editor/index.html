@@ -1250,10 +1250,10 @@ body {
     parentArchiveBuffer = null;
     parentArchiveName = '';
     btnBackToArchive.style.display = 'none';
-    // For files > 100MB, read first 64MB slice for fast preview, or full buffer if memory permits
+    // For very large files, read preview slice for responsive rendering
     const MAX_IMMEDIATE_READ = 64 * 1024 * 1024; // 64 MB
     if (file.size > MAX_IMMEDIATE_READ) {
-      statusSearch.textContent = `Streaming large file: ${formatBytes(file.size)} (head 64MB loaded)`;
+      statusSearch.textContent = `Streaming large file: ${formatBytes(file.size)}`;
       const slice = file.slice(0, MAX_IMMEDIATE_READ);
       slice.arrayBuffer().then(buf => loadBuffer(buf, file.name));
     } else {

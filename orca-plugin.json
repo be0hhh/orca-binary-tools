@@ -6,6 +6,10 @@
   "version": "1.0.3",
   "execution": "sandboxed-ui",
   "description": "Low-level binary inspection (ELF, AR archives, PE/COFF) with virtualized hex view, data inspector, and assembly syntax highlighting (x86/x64, ARM, GAS).",
+  "cover": {
+    "path": "assets/cover.jpg",
+    "alt": "Binary & Assembly Tools"
+  },
   "license": "MIT",
   "repository": "https://github.com/be0hhh/orca-binary-tools",
   "engines": {
