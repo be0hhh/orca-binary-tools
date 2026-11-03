@@ -4,6 +4,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Orca Plugin](https://img.shields.io/badge/Orca-Plugin-orange.svg)](https://onorca.dev/)
 
+<p align="center">
+  <img src="assets/cover.jpg" alt="Binary & Assembly Tools Cover" width="100%">
+</p>
+
 An extension for [Orca](https://useorca.com/) providing low-level binary inspection and syntax highlighting for Assembly languages.
 
 ---
