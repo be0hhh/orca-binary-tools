@@ -1,15 +1,16 @@
 {
+  "$schema": "https://raw.githubusercontent.com/stablyai/orca/main/docs/schemas/plugins/orca-plugin.v2.schema.json",
   "manifestVersion": 2,
   "id": "lowlevel-tools",
   "publisher": "be0hhh",
   "name": "Assembly & Binary Tools",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "execution": "sandboxed-ui",
   "description": "Native & low-level development toolkit: assembly (x86, ARM, GAS) and C++ inline/template (.ipp, .inl, .tpp) syntax highlighting, plus interactive Binary Inspector & Hex Viewer for .o and .a files.",
   "license": "MIT",
   "repository": "https://github.com/be0hhh/orca-lowlevel-tools",
   "engines": {
-    "orca": ">=1.4.248"
+    "orca": ">=1.4.245"
   },
   "contributes": {
     "syntaxes": [
@@ -20,7 +21,8 @@
         "path": "syntaxes/x86.tmLanguage.json",
         "configuration": "syntaxes/x86-configuration.json",
         "extensions": [
-          ".asm"
+          ".asm",
+          ".nasm"
         ]
       },
       {
@@ -29,7 +31,10 @@
         "scopeName": "source.asm.arm",
         "path": "syntaxes/arm.tmLanguage.json",
         "configuration": "syntaxes/arm-configuration.json",
-        "extensions": []
+        "extensions": [
+          ".arm",
+          ".a64"
+        ]
       },
       {
         "id": "asm-generic",
@@ -38,8 +43,7 @@
         "path": "syntaxes/generic.tmLanguage.json",
         "configuration": "syntaxes/gas-configuration.json",
         "extensions": [
-          ".s",
-          ".S"
+          ".s"
         ]
       },
       {
