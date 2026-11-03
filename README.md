@@ -8,14 +8,14 @@ An extension for [Orca](https://useorca.com/) providing low-level binary inspect
 
 ---
 
-## 🔍 Features
+## Features
 
 ### 1. Interactive Binary Inspector
 Visual custom editor for object files, static archives, shared libraries, and executables:
 - **Supported extensions**: `.o`, `.obj`, `.a`, `.lib`, `.so`, `.dylib`, `.dll`, `.exe`, `.bin`, `.elf`, `.out`
 - **Virtualized Hex View**: Smooth 60fps scrolling, byte color grouping (null, printable ASCII, control chars, high bytes), synchronized byte-to-ASCII highlight.
 - **Structure & Headers Tab**: Parses 32-bit & 64-bit ELF headers and section tables, PE/COFF sections, and AR headers. Click any section (`.text`, `.rodata`, `.data`) to jump directly to its offset in the hex view.
-- **Archive Members Tab**: Complete archive viewer for static libraries (`.a`, `.lib`). Inspect individual `.o` object files directly or view in hex. Shows deterministic build timestamps cleanly.
+- **Archive Members Tab**: Complete archive viewer for static libraries (`.a`, `.lib`). Inspect individual `.o` object files directly or view in hex. Shows deterministic build timestamps cleanly with navigation back to the archive.
 - **Strings Extractor**: Extract ASCII/UTF-8 strings (length ≥ 4) with search filtering and direct offset jumping.
 - **Interactive Data Inspector**: Collapsible side panel showing 8-bit, 16-bit, 32-bit, 64-bit integers (Little & Big Endian), Float32, Float64, binary bitfield, and ASCII representation for any selected byte.
 - **Large File Support**: Handles files over 50 MB smoothly via interactive Drag & Drop and chunked streaming.
@@ -27,7 +27,7 @@ Visual custom editor for object files, static archives, shared libraries, and ex
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### Method 1: In Orca Settings (Recommended)
 1. Open Orca and go to **Settings** (`Ctrl+,`) → **Plugins**.
@@ -50,6 +50,6 @@ git clone https://github.com/be0hhh/orca-binary-tools.git "%APPDATA%\orca\plugin
 
 ---
 
-## 📄 License
+## License
 
 MIT © [be0hhh](https://github.com/be0hhh)

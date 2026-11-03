@@ -3,7 +3,7 @@
   "id": "binary-tools",
   "publisher": "be0hhh",
   "name": "Binary & Assembly Tools",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "execution": "sandboxed-ui",
   "description": "Low-level binary inspection (ELF, AR archives, PE/COFF) with virtualized hex view, data inspector, and assembly syntax highlighting (x86/x64, ARM, GAS).",
   "license": "MIT",

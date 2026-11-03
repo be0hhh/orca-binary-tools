@@ -481,6 +481,7 @@ body {
 
 <div class="toolbar">
   <div id="fileBadge" class="file-badge raw">RAW BINARY</div>
+  <button id="btnBackToArchive" class="btn-small" style="display:none; margin-left:2px; font-weight:500;">← Back to Archive</button>
 
   <div class="nav-tabs">
     <button class="tab-btn active" data-tab="hex">Hex View</button>
@@ -629,6 +630,7 @@ body {
   const inspectorPanel = document.getElementById('inspectorPanel');
   const toggleInspectorBtn = document.getElementById('toggleInspectorBtn');
   const tabArchiveBtn = document.getElementById('tabArchiveBtn');
+  const btnBackToArchive = document.getElementById('btnBackToArchive');
   const archiveBody = document.getElementById('archiveBody');
   const structureWrapper = document.getElementById('structureWrapper');
   const stringsList = document.getElementById('stringsList');
@@ -640,13 +642,17 @@ body {
   const statusOffset = document.getElementById('statusOffset');
   const statusSearch = document.getElementById('statusSearch');
 
+  let parentArchiveBuffer = null;
+  let parentArchiveName = '';
+  let currentFileName = '';
+
   // Helpers
   const toHex = (num, len = 2) => num.toString(16).padStart(len, '0').toUpperCase();
   const formatBytes = (bytes) => {
-    if (bytes === 0) return '0 B';
+    if (!bytes || bytes <= 0) return '0 B';
     const k = 1024, dm = 2;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   };
 
@@ -1066,6 +1072,7 @@ body {
 
   // --- Main Buffer Loader ---
   function loadBuffer(arrayBuffer, fileName = 'binary') {
+    currentFileName = fileName;
     bufferData = new Uint8Array(arrayBuffer);
     dataLength = bufferData.byteLength;
     selectedOffset = 0;
@@ -1203,8 +1210,22 @@ body {
   window.__inspectMember = (idx) => {
     if (!arData || !arData.members[idx]) return;
     const member = arData.members[idx];
+    parentArchiveBuffer = bufferData.buffer.slice(bufferData.byteOffset, bufferData.byteOffset + bufferData.byteLength);
+    parentArchiveName = currentFileName || 'archive.a';
+    btnBackToArchive.style.display = 'inline-block';
     loadBuffer(member.bytes.buffer.slice(member.bytes.byteOffset, member.bytes.byteOffset + member.bytes.byteLength), member.name);
   };
+
+  btnBackToArchive.addEventListener('click', () => {
+    if (!parentArchiveBuffer) return;
+    const buf = parentArchiveBuffer;
+    const name = parentArchiveName;
+    parentArchiveBuffer = null;
+    parentArchiveName = '';
+    btnBackToArchive.style.display = 'none';
+    loadBuffer(buf, name);
+    tabArchiveBtn.click();
+  });
 
   // --- Large File & Drop Handling ---
   const dropOverlay = document.getElementById('dropOverlay');
@@ -1226,6 +1247,9 @@ body {
 
   function handleLocalFile(file) {
     dropOverlay.classList.add('hidden');
+    parentArchiveBuffer = null;
+    parentArchiveName = '';
+    btnBackToArchive.style.display = 'none';
     // For files > 100MB, read first 64MB slice for fast preview, or full buffer if memory permits
     const MAX_IMMEDIATE_READ = 64 * 1024 * 1024; // 64 MB
     if (file.size > MAX_IMMEDIATE_READ) {
@@ -1241,16 +1265,24 @@ body {
   if (window.orca && window.orca.document && typeof window.orca.document.session === 'function') {
     window.orca.document.session({
       decode: (e) => {
-        if (!e || !(e.bytes instanceof ArrayBuffer)) return { error: 'invalid-bytes' };
-        return { bytes: e.bytes };
+        if (!e || !e.bytes) return { error: 'invalid-bytes' };
+        const buf = e.bytes instanceof ArrayBuffer ? e.bytes : (ArrayBuffer.isView(e.bytes) ? e.bytes.buffer : null);
+        if (!buf) return { error: 'invalid-bytes' };
+        return { bytes: buf };
       },
       encode: (val) => ({ kind: 'bytes', bytes: val.bytes })
     }).then(session => {
       if (session.value && session.value.bytes) {
+        parentArchiveBuffer = null;
+        parentArchiveName = '';
+        btnBackToArchive.style.display = 'none';
         loadBuffer(session.value.bytes);
       }
       session.onReplace((next) => {
         if (next && next.bytes) {
+          parentArchiveBuffer = null;
+          parentArchiveName = '';
+          btnBackToArchive.style.display = 'none';
           loadBuffer(next.bytes);
         }
       });
