@@ -2,7 +2,7 @@
 
 Binary inspection and Assembly highlighting for Orca, using the current Orca theme.
 
-![Binary Inspector overview](assets/cover.png)
+![Binary Inspector overview](assets/cover.jpg)
 
 Binary files open directly inside Orca's editor tabs. No website, local server, or external application is required.
 

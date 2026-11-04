@@ -7,8 +7,8 @@
   "execution": "sandboxed-ui",
   "description": "Native-style binary inspection for ELF, PE/COFF and AR archives: searchable symbols, section sizes, hex, strings and Assembly highlighting.",
   "cover": {
-    "path": "assets/cover.png",
-    "alt": "Binary Inspector overview with native-style navigation, sections and size information"
+    "path": "assets/cover.jpg",
+    "alt": "Binary & Assembly Tools"
   },
   "license": "MIT",
   "repository": "https://github.com/be0hhh/orca-binary-tools",
