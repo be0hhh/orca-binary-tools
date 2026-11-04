@@ -3,7 +3,10 @@ import { parseBinary, searchBytes, scanStrings } from "./binary-core.mjs";
 const $ = (id) => document.getElementById(id);
 const hasDocumentSession = typeof window.orca?.document?.session === "function";
 const LIMIT = 64 * 1024 * 1024;
+const TOO_LARGE =
+  "This file exceeds the 64 MiB inspection limit. No data was truncated or opened.";
 const PAGE_SIZE = 200;
+const naturalOrder = new Intl.Collator(undefined, { numeric: true });
 const ROW_BYTES = 16;
 const SECTIONS = ["sections", "symbols", "archive", "hex", "strings"];
 const TITLES = {
@@ -34,6 +37,8 @@ const sizeCell = (value) =>
     ? "—"
     : `<span title="${esc(value.toLocaleString())} bytes">${esc(compact(value))}</span>`;
 let current = null;
+let tableView = null;
+let opening = hasDocumentSession;
 let parents = [];
 let loadGeneration = 0;
 let searchGeneration = 0;
@@ -100,19 +105,35 @@ function makeCurrent(bytes, name) {
 function loadBytes(input, name = "", options = {}) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   if (bytes.byteLength > LIMIT) {
-    notice(
-      "This file exceeds the 64 MiB inspection limit. No data was truncated or opened.",
-      true,
-    );
+    notice(TOO_LARGE, true);
     return false;
   }
   loadGeneration++;
   stopTasks();
+  opening = false;
+  let previous = options.preserveView && current && !parents.length && !current.name ? ui : null;
+  const tableScroll = previous ? $("tableScroll").scrollTop : 0;
   if (!options.keepParents) parents = [];
   current = makeCurrent(bytes, name);
-  ui = freshUI();
+  if (previous && !allowedSections().includes(previous.pane)) previous = null;
+  tableView = null;
+  ui = previous
+    ? {
+        ...previous,
+        matches: [],
+        matchIndex: -1,
+        matchLength: 0,
+        strings: null,
+        stringsNext: null,
+        stringsCursors: [0],
+        stringsQuery: null,
+        stringsLoading: false,
+      }
+    : freshUI();
+  ui.offset = Math.min(ui.offset, Math.max(0, bytes.length - 1));
+  if (previous && ui.pane === "strings") ui.page = 0;
   const p = current.parsed;
-  ui.pane =
+  if (!previous) ui.pane =
     p.format === "AR" && p.members.length
       ? "archive"
       : ["ELF", "PE", "COFF"].includes(p.format) && p.symbols.length
@@ -120,20 +141,50 @@ function loadBytes(input, name = "", options = {}) {
         : ["ELF", "PE", "COFF"].includes(p.format) && p.sections.length
           ? "sections"
           : "hex";
-  $("tableFilter").value = "";
-  $("symbolKind").value = "all";
-  $("byteSearch").value = "";
-  $("searchMode").value = "hex";
+  $("tableFilter").value = ui.filter;
+  $("symbolKind").value = ui.kind;
+  $("byteSearch").value = ui.query;
+  $("searchMode").value = ui.searchMode;
   $("offsetInput").value = "";
-  $("hexViewport").scrollTop = 0;
+  $("hexViewport").scrollTop = previous ? ui.scroll : 0;
   notice(current.parsed.warnings.join(" · "));
   render();
+  $("tableScroll").scrollTop = previous ? tableScroll : 0;
+  if (ui.pane === "strings") void analyzeStrings();
   return true;
+}
+async function displayBytes(input, name = "", options = {}) {
+  const generation = ++loadGeneration;
+  opening = true;
+  if (input.byteLength >= 1024 * 1024 && input.byteLength <= LIMIT) {
+    stopTasks();
+    $("statusTask").textContent = "Opening binary…";
+    renderEmptyState();
+    renderMetadata();
+    await new Promise((resolve) => {
+      const fallback = setTimeout(resolve, typeof requestAnimationFrame === "function" ? 100 : 0);
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => {
+        setTimeout(() => { clearTimeout(fallback); resolve(); }, 0);
+      });
+    });
+    if (generation !== loadGeneration) return;
+  }
+  if (!loadBytes(input, name, options)) {
+    opening = false;
+    $("statusTask").textContent = "";
+    renderEmptyState();
+    renderMetadata();
+  }
+}
+function renderEmptyState() {
+  $("emptyState").hidden = !hasDocumentSession || !!current?.bytes.length;
+  $("emptyHint").textContent = opening ? "Opening binary…" : "Choose a binary file to inspect.";
+  $("openFile").hidden = !hasDocumentSession || opening || !!current?.bytes.length;
 }
 function render() {
   renderNavigation();
   renderMetadata();
-  $("emptyState").hidden = !hasDocumentSession || !!current?.bytes.length;
+  renderEmptyState();
   for (const id of ["pane-table", "pane-hex"]) $(id).hidden = true;
   if (!current?.bytes.length) return;
   if (ui.pane === "hex") {
@@ -146,10 +197,12 @@ function render() {
   }
 }
 function renderMetadata() {
-  $("metadata").hidden = !current?.bytes.length;
-  if (!current?.bytes.length) return;
+  $("metadata").hidden = !hasDocumentSession && !current?.bytes.length;
+  $("fileSummary").hidden = !current?.bytes.length && !current?.name;
+  if (!current) return;
   const p = current.parsed;
   const info = [
+    parents.length ? null : current.name || null,
     p.format,
     p.architecture !== "Unknown" ? p.architecture : null,
     p.bits ? `${p.bits}-bit` : null,
@@ -158,7 +211,7 @@ function renderMetadata() {
   ].filter(Boolean);
   $("fileSummary").textContent = info.join(" · ");
   $("fileSummary").title =
-    `${p.fileSize.toLocaleString()} bytes on disk. ${p.memorySize == null ? "No loaded image size declared." : `${p.memorySize.toLocaleString()} bytes declared by load headers, not process RAM.`}`;
+    `${current.name ? `${current.name}. ` : ""}${p.fileSize.toLocaleString()} bytes on disk. ${p.memorySize == null ? "No loaded image size declared." : `${p.memorySize.toLocaleString()} bytes declared by load headers, not process RAM.`}`;
   $("archiveBack").innerHTML =
     parents
       .map(
@@ -188,13 +241,13 @@ function renderNavigation() {
   const available = allowedSections();
   $("navigation").hidden = !available.length;
   $("compactNavigation").hidden = !available.length;
-  $("navigation").innerHTML = allowedSections()
+  $("navigation").innerHTML = available
     .map(
       (key) =>
         `<button data-pane="${key}" class="${ui.pane === key ? "active" : ""}" ${ui.pane === key ? 'aria-current="page"' : ""}>${TITLES[key]}</button>`,
     )
     .join("");
-  $("compactNavigation").innerHTML = allowedSections()
+  $("compactNavigation").innerHTML = available
     .map(
       (key) =>
         `<option value="${key}" ${ui.pane === key ? "selected" : ""}>${TITLES[key]}</option>`,
@@ -293,7 +346,29 @@ function tableRows() {
   if (ui.pane === "strings") return { rows, total: rows.length };
   const q = ui.filter.toLocaleLowerCase();
   const total = rows.length;
-  rows = rows.filter(
+  if (
+    !tableView || tableView.source !== rows || tableView.sort !== ui.sort ||
+    tableView.descending !== ui.descending
+  ) {
+    const memberIndexes = ui.pane === "archive" ? new Map(rows.map((row, i) => [row, i])) : null;
+    const sorted = rows.slice().sort((a, b) => {
+      const x = a[ui.sort], y = b[ui.sort];
+      let comparison;
+      if (x == null || y == null) comparison = x == null ? (y == null ? 0 : 1) : -1;
+      else if (typeof x === "number" && typeof y === "number") comparison = x - y;
+      else if (ui.sort === "address" && /^0x/i.test(x) && /^0x/i.test(y)) {
+        const left = BigInt(x), right = BigInt(y);
+        comparison = left < right ? -1 : left > right ? 1 : 0;
+      } else comparison = naturalOrder.compare(String(x), String(y));
+      return ui.descending ? -comparison : comparison;
+    });
+    tableView = {
+      source: rows, sort: ui.sort, descending: ui.descending, sorted,
+      memberIndexes, query: null, kind: null, rows: null,
+    };
+  }
+  if (tableView.query === q && tableView.kind === ui.kind) return { rows: tableView.rows, total };
+  rows = !q && (ui.pane !== "symbols" || ui.kind === "all") ? tableView.sorted : tableView.sorted.filter(
     (row) =>
       (!q ||
         String(row.name ?? row.string ?? "")
@@ -303,21 +378,9 @@ function tableRows() {
         ui.kind === "all" ||
         symbolCategory(row) === ui.kind),
   );
-  rows = [...rows].sort((a, b) => {
-    let x = a[ui.sort],
-      y = b[ui.sort],
-      comparison;
-    if (x == null || y == null)
-      comparison = x == null ? (y == null ? 0 : 1) : -1;
-    else if (typeof x === "number" && typeof y === "number") comparison = x - y;
-    else if (ui.sort === "address" && /^0x/i.test(x) && /^0x/i.test(y))
-      comparison = BigInt(x) < BigInt(y) ? -1 : BigInt(x) > BigInt(y) ? 1 : 0;
-    else
-      comparison = String(x).localeCompare(String(y), undefined, {
-        numeric: true,
-      });
-    return ui.descending ? -comparison : comparison;
-  });
+  tableView.query = q;
+  tableView.kind = ui.kind;
+  tableView.rows = rows;
   return { rows, total };
 }
 function symbolCategory(symbol) {
@@ -348,6 +411,10 @@ function renderTable() {
       : rows.slice(ui.page * PAGE_SIZE, (ui.page + 1) * PAGE_SIZE);
   const body = pageRows
     .map((row) => {
+      const offset = ui.pane === "symbols" ? symbolOffset(row) : row.offset;
+      const target = ui.pane === "archive"
+        ? `data-member="${tableView.memberIndexes.get(row)}"`
+        : offset == null ? "" : `data-jump="${offset}"${ui.pane === "strings" ? ` data-length="${row.byteLength ?? new TextEncoder().encode(row.string).length}"` : ""}`;
       const cells = cols
         .map(([key]) => {
           const value = row[key];
@@ -369,21 +436,16 @@ function renderTable() {
               (key === "string" && row.truncated
                 ? " <span class=muted>… [preview; view bytes for full string]</span>"
                 : "");
+          if (target && (ui.pane === "archive" ? key === "name" : key === "offset"))
+            result = `<a href="#" ${target} title="${ui.pane === "archive" ? "Open object" : "Show bytes"}">${result}</a>`;
           return `<td class="${key === "name" ? "name" : key === "string" ? "string-value mono" : ["offset", "address", "size", "fileSize", "memorySize"].includes(key) ? "number" : ""}">${result}</td>`;
         })
         .join("");
-      const offset = ui.pane === "symbols" ? symbolOffset(row) : row.offset;
-      const actions =
-        ui.pane === "archive"
-          ? `<button aria-label="Inspect ${esc(row.name)}" data-member="${current.parsed.members.indexOf(row)}">Inspect</button>`
-          : offset == null
-            ? ""
-            : `<button data-jump="${offset}"${ui.pane === "strings" ? ` data-length="${row.byteLength ?? new TextEncoder().encode(row.string).length}"` : ""}>View bytes</button>`;
-      return `<tr>${cells}<td><div class="row-actions">${actions}</div></td></tr>`;
+      return `<tr>${cells}</tr>`;
     })
     .join("");
   $("tableScroll").innerHTML =
-    `<table aria-label="${TITLES[ui.pane]}"><thead><tr>${cols.map(([key, title]) => `<th scope="col" aria-sort="${ui.sort === key ? (ui.descending ? "descending" : "ascending") : "none"}"><button ${ui.pane === "strings" ? "disabled" : `data-sort="${key}"`}>${title}${ui.sort === key ? (ui.descending ? " ↓" : " ↑") : ""}</button></th>`).join("")}<th scope="col">Action</th></tr></thead><tbody>${body}</tbody></table>${rows.length ? "" : `<div class="empty">${ui.stringsLoading ? "Extracting strings…" : ui.filter ? "No matching results." : ui.pane === "symbols" ? "No symbols available. This file may be stripped or contain no symbol table." : "No entries in this file."}</div>`}`;
+    `<table aria-label="${TITLES[ui.pane]}"><thead><tr>${cols.map(([key, title]) => `<th scope="col" aria-sort="${ui.sort === key ? (ui.descending ? "descending" : "ascending") : "none"}"><button ${ui.pane === "strings" ? "disabled" : `data-sort="${key}"`}>${title}${ui.sort === key ? (ui.descending ? " ↓" : " ↑") : ""}</button></th>`).join("")} </tr></thead><tbody>${body}</tbody></table>${rows.length ? "" : `<div class="empty">${ui.stringsLoading ? "Extracting strings…" : ui.filter ? "No matching results." : ui.pane === "symbols" ? "No symbols available. This file may be stripped or contain no symbol table." : "No entries in this file."}</div>`}`;
   if (ui.pane === "strings") {
     $("pagination").innerHTML =
       `<span>Page ${ui.page + 1} · file order</span><button id="previousPage" ${ui.page === 0 || ui.stringsLoading ? "disabled" : ""}>Previous</button><button id="nextPage" ${ui.stringsNext == null || ui.stringsLoading ? "disabled" : ""}>Next</button>`;
@@ -564,8 +626,10 @@ function returnParent(index) {
   const target = parents[index];
   if (!target) return;
   stopTasks();
+  opening = false;
   parents = parents.slice(0, index);
   current = target.current;
+  tableView = null;
   ui = target.ui;
   $("tableFilter").value = ui.filter;
   $("symbolKind").value = ui.kind;
@@ -662,18 +726,27 @@ async function analyzeStrings() {
     }
   }
 }
-async function demo(name) {
+async function openSelectedFile(file) {
+  if (!file) return;
   const generation = ++loadGeneration;
+  if (file.size > LIMIT) {
+    notice(TOO_LARGE, true);
+    return;
+  }
   try {
-    const response = await fetch(`../samples/${name}`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const bytes = await response.arrayBuffer();
-    if (generation === loadGeneration) loadBytes(bytes, name);
+    const bytes = await file.arrayBuffer();
+    if (generation === loadGeneration) await displayBytes(bytes, file.name);
   } catch (error) {
     if (generation === loadGeneration)
-      notice(`Could not open demonstration: ${error.message}`, true);
+      notice(`Could not open ${file.name}: ${error.message}`, true);
   }
 }
+$("openFile").addEventListener("click", () => $("filePicker").click());
+$("filePicker").addEventListener("change", (event) => {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  void openSelectedFile(file);
+});
 $("navigation").addEventListener("click", (event) => {
   const button = event.target.closest("[data-pane]");
   if (button) switchPane(button.dataset.pane);
@@ -686,8 +759,9 @@ $("archiveBack").addEventListener("click", (event) => {
   if (button) returnParent(Number(button.dataset.parent));
 });
 $("tableScroll").addEventListener("click", (event) => {
-  const button = event.target.closest("button");
+  const button = event.target.closest("button, a[data-member], a[data-jump]");
   if (!button) return;
+  event.preventDefault();
   if (button.dataset.sort) {
     ui.descending = ui.sort === button.dataset.sort ? !ui.descending : false;
     ui.sort = button.dataset.sort;
@@ -763,7 +837,6 @@ $("toggleInspector").addEventListener("click", () => {
   ui.inspector = !ui.inspector;
   renderHex();
 });
-$("findBytes").addEventListener("click", () => void runSearch());
 $("byteSearch").addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
@@ -794,11 +867,13 @@ $("offsetInput").addEventListener("keydown", (event) => {
   }
   jump(Number(raw));
 });
-$("demoObject").addEventListener("click", () => void demo("sample.o"));
-$("demoArchive").addEventListener("click", () => void demo("sample.a"));
 new ResizeObserver(() => {
   if (ui.pane === "hex") renderHex();
 }).observe($("hexViewport"));
+window.addEventListener("pagehide", () => {
+  loadGeneration++;
+  stopTasks();
+});
 document.fonts?.ready.then(() => {
   if (ui.pane === "hex" && current?.bytes.length) jump(ui.offset);
 });
@@ -823,14 +898,24 @@ if (hasDocumentSession) {
     .then((session) => {
       const replace = (value) => {
         if (value?.bytes) {
+          void displayBytes(value.bytes, "", { preserveView: true });
+        } else if (value?.error === "invalid-bytes") {
           loadGeneration++;
-          loadBytes(value.bytes);
+          stopTasks();
+          opening = false;
+          notice("Could not read binary bytes from the Orca document.", true);
+          renderEmptyState();
+          renderMetadata();
         }
       };
       replace(session.value);
       session.onReplace(replace);
+      $("openFile").disabled = false;
+      $("filePicker").disabled = false;
     })
-    .catch((error) =>
-      notice(`Could not load the Orca document: ${error.message}.`, true),
-    );
+    .catch((error) => {
+      opening = false;
+      notice(`Could not load the Orca document: ${error.message}.`, true);
+      renderEmptyState();
+    });
 }
