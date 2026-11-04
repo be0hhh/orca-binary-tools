@@ -1,20 +1,13 @@
 import { parseBinary, searchBytes, scanStrings } from "./binary-core.mjs";
 
 const $ = (id) => document.getElementById(id);
+const hasDocumentSession = typeof window.orca?.document?.session === "function";
 const LIMIT = 64 * 1024 * 1024;
 const PAGE_SIZE = 200;
 const ROW_BYTES = 16;
 const ROW_HEIGHT = 23;
-const SECTIONS = [
-  "overview",
-  "sections",
-  "symbols",
-  "archive",
-  "hex",
-  "strings",
-];
+const SECTIONS = ["sections", "symbols", "archive", "hex", "strings"];
 const TITLES = {
-  overview: "Overview",
   sections: "Sections",
   symbols: "Symbols",
   archive: "Archive objects",
@@ -52,7 +45,7 @@ let ui = freshUI();
 
 function freshUI() {
   return {
-    pane: "overview",
+    pane: "hex",
     filter: "",
     kind: "all",
     sort: "name",
@@ -105,7 +98,7 @@ function makeCurrent(bytes, name) {
   }
   return { bytes, name, parsed };
 }
-function loadBytes(input, name = "Binary document", options = {}) {
+function loadBytes(input, name = "", options = {}) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   if (bytes.byteLength > LIMIT) {
     notice(
@@ -119,11 +112,15 @@ function loadBytes(input, name = "Binary document", options = {}) {
   if (!options.keepParents) parents = [];
   current = makeCurrent(bytes, name);
   ui = freshUI();
+  const p = current.parsed;
   ui.pane =
-    current.parsed.format === "RAW" || current.parsed.format === "Mach-O"
-      ? "hex"
-      : "overview";
-  $("welcome").hidden = bytes.length > 0;
+    p.format === "AR" && p.members.length
+      ? "archive"
+      : ["ELF", "PE", "COFF"].includes(p.format) && p.symbols.length
+        ? "symbols"
+        : ["ELF", "PE", "COFF"].includes(p.format) && p.sections.length
+          ? "sections"
+          : "hex";
   $("tableFilter").value = "";
   $("symbolKind").value = "all";
   $("byteSearch").value = "";
@@ -135,22 +132,12 @@ function loadBytes(input, name = "Binary document", options = {}) {
   return true;
 }
 function render() {
-  renderBreadcrumbs();
   renderNavigation();
-  $("statusFile").textContent = current
-    ? `${compact(current.bytes.length)} · ${current.parsed.format}${current.parsed.architecture ? ` · ${current.parsed.architecture}` : ""}`
-    : "No file open";
-  $("statusOffset").textContent = current?.bytes.length
-    ? `Offset ${hex(ui.offset)} (${ui.offset})`
-    : "";
-  $("welcome").hidden = !!current?.bytes.length;
-  for (const id of ["pane-overview", "pane-table", "pane-hex"])
-    $(id).hidden = true;
+  renderMetadata();
+  $("emptyState").hidden = !hasDocumentSession || !!current?.bytes.length;
+  for (const id of ["pane-table", "pane-hex"]) $(id).hidden = true;
   if (!current?.bytes.length) return;
-  if (ui.pane === "overview") {
-    $("pane-overview").hidden = false;
-    renderOverview();
-  } else if (ui.pane === "hex") {
+  if (ui.pane === "hex") {
     $("pane-hex").hidden = false;
     renderHex();
     renderInspector();
@@ -159,33 +146,53 @@ function render() {
     renderTable();
   }
 }
-function renderBreadcrumbs() {
-  $("breadcrumbs").innerHTML =
+function renderMetadata() {
+  $("metadata").hidden = !current?.bytes.length;
+  if (!current?.bytes.length) return;
+  const p = current.parsed;
+  const info = [
+    p.format,
+    p.architecture !== "Unknown" ? p.architecture : null,
+    p.bits ? `${p.bits}-bit` : null,
+    `${compact(p.fileSize)} on disk`,
+    p.memorySize == null ? null : `${compact(p.memorySize)} image`,
+  ].filter(Boolean);
+  $("fileSummary").textContent = info.join(" · ");
+  $("fileSummary").title =
+    `${p.fileSize.toLocaleString()} bytes on disk. ${p.memorySize == null ? "No loaded image size declared." : `${p.memorySize.toLocaleString()} bytes declared by load headers, not process RAM.`}`;
+  $("archiveBack").innerHTML =
     parents
       .map(
         (entry, index) =>
-          `<button data-parent="${index}" title="Return to ${esc(entry.current.name)}">${esc(entry.current.name)}</button><span class="muted" aria-hidden="true">/</span>`,
+          `<button data-parent="${index}" title="Return to ${esc(entry.current.name || "archive")}">← ${esc(entry.current.name || "Archive")}</button>`,
       )
       .join("") +
-    `<strong title="${esc(current?.name || "Binary Inspector")}">${esc(current?.name || "Binary Inspector")}</strong>`;
+    (parents.length
+      ? `<span class="member-name" title="${esc(current.name)}">${esc(current.name)}</span>`
+      : "");
+  $("archiveBack").hidden = !parents.length;
 }
 function allowedSections() {
-  if (!current) return ["overview", "hex"];
-  return SECTIONS.filter(
-    (key) => key !== "archive" || current.parsed.format === "AR",
+  if (!current?.bytes.length) return [];
+  const p = current.parsed;
+  return SECTIONS.filter((key) =>
+    key === "sections"
+      ? p.sections.length > 0
+      : key === "symbols"
+        ? p.symbols.length > 0
+        : key === "archive"
+          ? p.members.length > 0
+          : true,
   );
 }
 function renderNavigation() {
-  const p = current?.parsed;
-  const counts = {
-    sections: p?.sections.length,
-    symbols: p?.symbols.length,
-    archive: p?.members.filter((m) => !m.service).length,
-  };
+  const available = allowedSections();
+  $("navigation").hidden = !available.length;
+  $("compactNavigation").hidden = !available.length;
   $("navigation").innerHTML = allowedSections()
     .map(
       (key) =>
-        `<button data-pane="${key}" class="${ui.pane === key ? "active" : ""}" ${ui.pane === key ? 'aria-current="page"' : ""}>${TITLES[key]}${counts[key] == null ? "" : `<span class="nav-count">${counts[key].toLocaleString()}</span>`}</button>`,
+        `<button data-pane="${key}" class="${ui.pane === key ? "active" : ""}" ${ui.pane === key ? 'aria-current="page"' : ""}>${TITLES[key]}</button>`,
     )
     .join("");
   $("compactNavigation").innerHTML = allowedSections()
@@ -197,7 +204,14 @@ function renderNavigation() {
 }
 function switchPane(pane) {
   if (!allowedSections().includes(pane)) return;
-  if (ui.pane === "hex") ui.scroll = $("hexViewport").scrollTop;
+  if (ui.pane === "hex") {
+    ui.scroll = $("hexViewport").scrollTop;
+    if (pane !== "hex") {
+      searchController?.abort();
+      searchGeneration++;
+      $("statusTask").textContent = "";
+    }
+  }
   if (ui.pane === "strings" && pane !== "strings") {
     stringsController?.abort();
     stringsGeneration++;
@@ -230,17 +244,6 @@ function switchPane(pane) {
     !ui.stringsLoading
   )
     void analyzeStrings();
-}
-function metric(label, value, note = "") {
-  return `<div class="metric"><div class="metric-label">${label}</div><div class="metric-value">${value}</div><div class="metric-note">${note}</div></div>`;
-}
-function renderOverview() {
-  const p = current.parsed;
-  const largest = [...p.sections]
-    .sort((a, b) => b.fileSize - a.fileSize)
-    .slice(0, 8);
-  $("pane-overview").innerHTML =
-    `<div class="overview-head"><h1>${esc(current.name)}</h1><span class="badge">${esc(p.format)}</span></div><p class="muted">${esc([p.architecture, p.bits ? `${p.bits}-bit` : "", p.endian ? `${p.endian === "LE" ? "Little" : "Big"} endian` : ""].filter(Boolean).join(" · "))}</p><div class="metrics">${metric("File on disk", sizeCell(p.fileSize), `${p.fileSize.toLocaleString()} bytes`)}${metric("Image in memory", sizeCell(p.memorySize), p.memorySize == null ? "Not declared by this file" : "Declared by load headers")}${metric("Sections", p.sections.length.toLocaleString())}${metric(p.format === "AR" ? "Object members" : "Symbols", p.format === "AR" ? p.members.filter((m) => !m.service).length.toLocaleString() : p.symbols.length.toLocaleString())}</div><p class="overview-note">Memory sizes describe the binary image, not the RAM used by a running process. Missing sizes are shown as —. Zero-filled sections can occupy memory without bytes in the file.</p><div class="actions"><button data-pane="hex">View bytes</button><button data-pane="symbols">Browse symbols</button>${p.format === "AR" ? '<button data-pane="archive">Browse objects</button>' : ""}</div>${largest.length ? `<h2>Largest sections on disk</h2><table><thead><tr><th>Section</th><th>On disk</th><th>In memory</th><th></th></tr></thead><tbody>${largest.map((s) => `<tr><td>${esc(s.name)}</td><td class="number">${sizeCell(s.fileSize)}</td><td class="number">${sizeCell(s.memorySize)}</td><td>${s.offset == null ? "" : `<button data-jump="${s.offset}">View bytes</button>`}</td></tr>`).join("")}</tbody></table>` : ""}${p.format === "AR" ? '<p class="overview-note">Open an archive member to inspect its sections and symbols. Archive index members are marked as metadata.</p>' : ""}${!p.symbols.length && p.format !== "AR" ? '<p class="overview-note">No symbol table was found. The file may have been stripped; its sections and bytes remain available.</p>' : ""}`;
 }
 function columns() {
   if (ui.pane === "sections")
@@ -329,7 +332,6 @@ function symbolOffset(symbol) {
   return symbol.offset ?? null;
 }
 function renderTable() {
-  $("tableTitle").textContent = TITLES[ui.pane];
   $("symbolKind").hidden = ui.pane !== "symbols";
   $("tableFilter").placeholder =
     ui.pane === "strings" ? "Filter strings…" : "Filter by name…";
@@ -499,7 +501,6 @@ function renderInspector() {
           : "—",
       );
   $("inspector").innerHTML = html;
-  $("statusOffset").textContent = `Offset ${hex(offset)} (${offset})`;
 }
 function jump(offset, length = 0) {
   if (
@@ -654,23 +655,6 @@ async function analyzeStrings() {
     }
   }
 }
-async function openLocal(file) {
-  const generation = ++loadGeneration;
-  if (file.size > LIMIT) {
-    notice(
-      "This file exceeds the 64 MiB inspection limit. No data was truncated or opened.",
-      true,
-    );
-    return;
-  }
-  try {
-    const bytes = await file.arrayBuffer();
-    if (generation === loadGeneration) loadBytes(bytes, file.name);
-  } catch (error) {
-    if (generation === loadGeneration)
-      notice(`Could not open file: ${error.message}`, true);
-  }
-}
 async function demo(name) {
   const generation = ++loadGeneration;
   try {
@@ -690,12 +674,7 @@ $("navigation").addEventListener("click", (event) => {
 $("compactNavigation").addEventListener("change", (event) =>
   switchPane(event.target.value),
 );
-$("pane-overview").addEventListener("click", (event) => {
-  const button = event.target.closest("button");
-  if (button?.dataset.pane) switchPane(button.dataset.pane);
-  else if (button?.dataset.jump) jump(Number(button.dataset.jump));
-});
-$("breadcrumbs").addEventListener("click", (event) => {
+$("archiveBack").addEventListener("click", (event) => {
   const button = event.target.closest("[data-parent]");
   if (button) returnParent(Number(button.dataset.parent));
 });
@@ -801,43 +780,13 @@ $("offsetInput").addEventListener("keydown", (event) => {
   }
   jump(Number(raw));
 });
-$("openFile").addEventListener("click", () => $("filePicker").click());
-$("filePicker").addEventListener("change", (event) => {
-  const file = event.target.files[0];
-  if (file) void openLocal(file);
-  event.target.value = "";
-});
 $("demoObject").addEventListener("click", () => void demo("sample.o"));
 $("demoArchive").addEventListener("click", () => void demo("sample.a"));
-let dragDepth = 0;
-window.addEventListener("dragenter", (event) => {
-  if (event.dataTransfer?.types.includes("Files")) {
-    event.preventDefault();
-    dragDepth++;
-    $("dropHint").hidden = false;
-  }
-});
-window.addEventListener("dragover", (event) => {
-  if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
-});
-window.addEventListener("dragleave", () => {
-  if (--dragDepth <= 0) {
-    dragDepth = 0;
-    $("dropHint").hidden = true;
-  }
-});
-window.addEventListener("drop", (event) => {
-  event.preventDefault();
-  dragDepth = 0;
-  $("dropHint").hidden = true;
-  const file = event.dataTransfer?.files[0];
-  if (file) void openLocal(file);
-});
 new ResizeObserver(() => {
   if (ui.pane === "hex") renderHex();
 }).observe($("hexViewport"));
 render();
-if (window.orca?.document?.session) {
+if (hasDocumentSession) {
   const normalize = (event) => {
     if (event?.bytes instanceof ArrayBuffer) return { bytes: event.bytes };
     if (ArrayBuffer.isView(event?.bytes))
@@ -865,9 +814,6 @@ if (window.orca?.document?.session) {
       session.onReplace(replace);
     })
     .catch((error) =>
-      notice(
-        `Could not load the Orca document: ${error.message}. You can still open a local file.`,
-        true,
-      ),
+      notice(`Could not load the Orca document: ${error.message}.`, true),
     );
 }

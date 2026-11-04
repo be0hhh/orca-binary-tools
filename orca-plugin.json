@@ -3,7 +3,7 @@
   "id": "binary-tools",
   "publisher": "be0hhh",
   "name": "Binary & Assembly Tools",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "execution": "sandboxed-ui",
   "description": "Native-style binary inspection for ELF, PE/COFF and AR archives: searchable symbols, section sizes, hex, strings and Assembly highlighting.",
   "cover": {
@@ -23,10 +23,7 @@
         "scopeName": "source.asm.x86",
         "path": "syntaxes/x86.tmLanguage.json",
         "configuration": "syntaxes/x86-configuration.json",
-        "extensions": [
-          ".asm",
-          ".inc"
-        ],
+        "extensions": [".asm", ".inc"],
         "filenames": []
       },
       {
@@ -35,10 +32,7 @@
         "scopeName": "source.asm.arm",
         "path": "syntaxes/arm.tmLanguage.json",
         "configuration": "syntaxes/arm-configuration.json",
-        "extensions": [
-          ".arm",
-          ".a64"
-        ],
+        "extensions": [".arm", ".a64"],
         "filenames": []
       },
       {
@@ -47,9 +41,7 @@
         "scopeName": "source.asm",
         "path": "syntaxes/generic.tmLanguage.json",
         "configuration": "syntaxes/gas-configuration.json",
-        "extensions": [
-          ".s"
-        ],
+        "extensions": [".s"],
         "filenames": []
       }
     ],

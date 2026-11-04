@@ -7,38 +7,23 @@
     <link rel="stylesheet" href="./ui.css" />
   </head>
   <body>
-    <header class="toolbar">
-      <div id="breadcrumbs" class="breadcrumbs">
-        <strong>Binary Inspector</strong>
-      </div>
-      <button id="openFile" title="Open a local binary file">Open file…</button>
-      <input id="filePicker" type="file" hidden />
-    </header>
-    <div id="notice" class="notice" role="status" hidden></div>
     <div class="layout">
       <nav aria-label="Inspection sections" id="navigation"></nav>
       <select id="compactNavigation" aria-label="Inspection section"></select>
       <main id="main" tabindex="-1">
-        <div id="welcome" class="welcome">
-          <div class="welcome-icon" aria-hidden="true">01</div>
-          <h1>Binary Inspector</h1>
-          <p>
-            Inspect sections, symbols, archive objects and bytes.<br />Open a
-            binary or try a small demonstration.
-          </p>
-          <div class="actions">
-            <button id="demoObject">Try ELF object</button
-            ><button id="demoArchive">Try static archive</button>
-          </div>
-          <p class="muted small">
-            ELF · PE / COFF · AR archives · Up to 64 MiB<br />Drop a file
-            anywhere to open it.
-          </p>
+        <div id="metadata" class="metadata" hidden>
+          <span id="archiveBack" class="archive-back"></span>
+          <span id="fileSummary" class="file-summary"></span>
+          <span id="statusTask" class="task" role="status"></span>
         </div>
-        <section id="pane-overview" class="pane" hidden></section>
+        <div id="notice" class="notice" role="status" hidden></div>
+        <div id="emptyState" class="empty-state" hidden>
+          <span class="muted">Empty binary. Try a demonstration:</span>
+          <button id="demoObject">ELF object</button>
+          <button id="demoArchive">Static archive</button>
+        </div>
         <section id="pane-table" class="pane table-pane" hidden>
           <div class="section-toolbar">
-            <h1 id="tableTitle"></h1>
             <input
               id="tableFilter"
               type="search"
@@ -96,11 +81,6 @@
         </section>
       </main>
     </div>
-    <footer>
-      <span id="statusFile">No file open</span><span id="statusOffset"></span
-      ><span id="statusTask" role="status"></span>
-    </footer>
-    <div id="dropHint" hidden>Drop binary file to inspect</div>
     <script type="module" src="./ui.mjs"></script>
   </body>
 </html>
