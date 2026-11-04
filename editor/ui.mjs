@@ -5,7 +5,6 @@ const hasDocumentSession = typeof window.orca?.document?.session === "function";
 const LIMIT = 64 * 1024 * 1024;
 const PAGE_SIZE = 200;
 const ROW_BYTES = 16;
-const ROW_HEIGHT = 23;
 const SECTIONS = ["sections", "symbols", "archive", "hex", "strings"];
 const TITLES = {
   sections: "Sections",
@@ -376,7 +375,7 @@ function renderTable() {
       const offset = ui.pane === "symbols" ? symbolOffset(row) : row.offset;
       const actions =
         ui.pane === "archive"
-          ? `<button data-member="${current.parsed.members.indexOf(row)}">Inspect</button>`
+          ? `<button aria-label="Inspect ${esc(row.name)}" data-member="${current.parsed.members.indexOf(row)}">Inspect</button>`
           : offset == null
             ? ""
             : `<button data-jump="${offset}"${ui.pane === "strings" ? ` data-length="${row.byteLength ?? new TextEncoder().encode(row.string).length}"` : ""}>View bytes</button>`;
@@ -384,7 +383,7 @@ function renderTable() {
     })
     .join("");
   $("tableScroll").innerHTML =
-    `<table><thead><tr>${cols.map(([key, title]) => `<th aria-sort="${ui.sort === key ? (ui.descending ? "descending" : "ascending") : "none"}"><button ${ui.pane === "strings" ? "disabled" : `data-sort="${key}"`}>${title}${ui.sort === key ? (ui.descending ? " ↓" : " ↑") : ""}</button></th>`).join("")}<th>Action</th></tr></thead><tbody>${body}</tbody></table>${rows.length ? "" : `<div class="empty">${ui.stringsLoading ? "Extracting strings…" : ui.filter ? "No matching results." : ui.pane === "symbols" ? "No symbols available. This file may be stripped or contain no symbol table." : "No entries in this file."}</div>`}`;
+    `<table aria-label="${TITLES[ui.pane]}"><thead><tr>${cols.map(([key, title]) => `<th scope="col" aria-sort="${ui.sort === key ? (ui.descending ? "descending" : "ascending") : "none"}"><button ${ui.pane === "strings" ? "disabled" : `data-sort="${key}"`}>${title}${ui.sort === key ? (ui.descending ? " ↓" : " ↑") : ""}</button></th>`).join("")}<th scope="col">Action</th></tr></thead><tbody>${body}</tbody></table>${rows.length ? "" : `<div class="empty">${ui.stringsLoading ? "Extracting strings…" : ui.filter ? "No matching results." : ui.pane === "symbols" ? "No symbols available. This file may be stripped or contain no symbol table." : "No entries in this file."}</div>`}`;
   if (ui.pane === "strings") {
     $("pagination").innerHTML =
       `<span>Page ${ui.page + 1} · file order</span><button id="previousPage" ${ui.page === 0 || ui.stringsLoading ? "disabled" : ""}>Previous</button><button id="nextPage" ${ui.stringsNext == null || ui.stringsLoading ? "disabled" : ""}>Next</button>`;
@@ -405,8 +404,10 @@ function isMatch(offset) {
   return high >= 0 && offset < matches[high] + ui.matchLength;
 }
 function hexGeometry() {
+  // Use the same computed line height as the painted rows, including CSS overrides.
+  const rowHeight = parseFloat(getComputedStyle($("hexViewport")).lineHeight) || 19;
   const totalHeight =
-    Math.ceil((current?.bytes.length || 0) / ROW_BYTES) * ROW_HEIGHT;
+    Math.ceil((current?.bytes.length || 0) / ROW_BYTES) * rowHeight;
   // Chromium caps layout heights. Compress the scrollbar while retaining real row pixels.
   const height = Math.min(totalHeight, 8_000_000);
   const viewportHeight = $("hexViewport").clientHeight;
@@ -414,7 +415,7 @@ function hexGeometry() {
     1,
     (totalHeight - viewportHeight) / Math.max(1, height - viewportHeight),
   );
-  return { height, scale };
+  return { height, scale, rowHeight };
 }
 function renderHex() {
   if (!current) return;
@@ -422,15 +423,16 @@ function renderHex() {
     viewport = $("hexViewport");
   const total = Math.ceil(bytes.length / ROW_BYTES);
   const geometry = hexGeometry();
+  const rowHeight = geometry.rowHeight;
   const logicalScroll = viewport.scrollTop * geometry.scale;
-  const start = Math.max(0, Math.floor(logicalScroll / ROW_HEIGHT) - 4);
+  const start = Math.max(0, Math.floor(logicalScroll / rowHeight) - 4);
   const end = Math.min(
     total,
-    start + Math.ceil(viewport.clientHeight / ROW_HEIGHT) + 9,
+    start + Math.ceil(viewport.clientHeight / rowHeight) + 9,
   );
   $("hexSpacer").style.height = `${geometry.height}px`;
   $("hexRows").style.top =
-    `${viewport.scrollTop + start * ROW_HEIGHT - logicalScroll}px`;
+    `${viewport.scrollTop + start * rowHeight - logicalScroll}px`;
   let html = "";
   for (let row = start; row < end; row++) {
     const base = row * ROW_BYTES;
@@ -444,12 +446,16 @@ function renderHex() {
         continue;
       }
       const state = `${ui.offset === offset ? " selected" : ""}${isMatch(offset) ? " match" : ""}`;
-      byteHtml += `<span class="hex-byte${b === 0 ? " zero" : b < 32 || b === 127 ? " control" : b > 126 ? " high" : ""}${state}" data-byte="${offset}" title="${hex(offset)} · ${b}">${b.toString(16).toUpperCase().padStart(2, "0")}</span>`;
+      byteHtml += `<span role="gridcell" id="byte-${offset}" aria-colindex="${index + 2}" aria-selected="${ui.offset === offset}" aria-label="File offset ${hex(offset)}, hex ${b.toString(16).toUpperCase().padStart(2, "0")}, decimal ${b}" class="hex-byte${b === 0 ? " zero" : b < 32 || b === 127 ? " control" : b > 126 ? " high" : ""}${state}" data-byte="${offset}" title="${hex(offset)} · ${b}">${b.toString(16).toUpperCase().padStart(2, "0")}</span>`;
       asciiHtml += `<span class="ascii-char${state}" data-byte="${offset}">${b >= 32 && b <= 126 ? esc(String.fromCharCode(b)) : "·"}</span>`;
     }
-    html += `<div class="hex-row"><span class="hex-address">${hex(base)}</span><div class="hex-values">${byteHtml}</div><div class="hex-ascii">${asciiHtml}</div></div>`;
+    html += `<div class="hex-row" role="row" aria-rowindex="${row + 1}"><span class="hex-address" role="rowheader" aria-colindex="1">${hex(base)}</span><div class="hex-values" role="presentation">${byteHtml}</div><div class="hex-ascii" aria-hidden="true">${asciiHtml}</div></div>`;
   }
   $("hexRows").innerHTML = html;
+  viewport.setAttribute("aria-rowcount", String(total));
+  if (document.getElementById(`byte-${ui.offset}`))
+    viewport.setAttribute("aria-activedescendant", `byte-${ui.offset}`);
+  else viewport.removeAttribute("aria-activedescendant");
   $("inspector").hidden = !ui.inspector;
   $("toggleInspector").setAttribute("aria-expanded", String(ui.inspector));
   $("matchCount").textContent = ui.matches.length
@@ -519,15 +525,16 @@ function jump(offset, length = 0) {
     ui.matchIndex = 0;
     ui.matchLength = length;
   }
-  const viewport = $("hexViewport"),
-    top = Math.floor(offset / ROW_BYTES) * ROW_HEIGHT;
+  const viewport = $("hexViewport");
   const geometry = hexGeometry();
+  const rowHeight = geometry.rowHeight;
+  const top = Math.floor(offset / ROW_BYTES) * rowHeight;
   const logicalScroll = viewport.scrollTop * geometry.scale;
   if (
     top < logicalScroll ||
-    top + ROW_HEIGHT > logicalScroll + viewport.clientHeight
+    top + rowHeight > logicalScroll + viewport.clientHeight
   )
-    viewport.scrollTop = Math.max(0, top - ROW_HEIGHT * 3) / geometry.scale;
+    viewport.scrollTop = Math.max(0, top - rowHeight * 3) / geometry.scale;
   ui.scroll = viewport.scrollTop;
   renderHex();
   renderInspector();
@@ -734,13 +741,20 @@ $("hexRows").addEventListener("click", (event) => {
     ui.offset = Number(byte.dataset.byte);
     renderHex();
     renderInspector();
+    $("hexViewport").focus({ preventScroll: true });
   }
 });
 $("hexViewport").addEventListener("keydown", (event) => {
   const delta = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -16, ArrowDown: 16 }[
     event.key
   ];
-  if (delta != null && current?.bytes.length) {
+  if ((event.key === "Home" || event.key === "End") && current?.bytes.length) {
+    event.preventDefault();
+    const rowStart = Math.floor(ui.offset / ROW_BYTES) * ROW_BYTES;
+    jump(event.key === "Home"
+      ? (event.ctrlKey || event.metaKey ? 0 : rowStart)
+      : (event.ctrlKey || event.metaKey ? current.bytes.length - 1 : Math.min(current.bytes.length - 1, rowStart + ROW_BYTES - 1)));
+  } else if (delta != null && current?.bytes.length) {
     event.preventDefault();
     jump(Math.max(0, Math.min(current.bytes.length - 1, ui.offset + delta)));
   }
@@ -785,6 +799,9 @@ $("demoArchive").addEventListener("click", () => void demo("sample.a"));
 new ResizeObserver(() => {
   if (ui.pane === "hex") renderHex();
 }).observe($("hexViewport"));
+document.fonts?.ready.then(() => {
+  if (ui.pane === "hex" && current?.bytes.length) jump(ui.offset);
+});
 render();
 if (hasDocumentSession) {
   const normalize = (event) => {

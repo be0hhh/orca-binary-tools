@@ -333,3 +333,66 @@ test("frame surface uses paired Orca card tokens and excludes removed chrome sty
   assert.match(css, /--fg:\s*var\(--orca-card-foreground,/);
   assert.doesNotMatch(css, /\.welcome|\.metrics|\.toolbar\s*\{|footer\s*\{/);
 });
+
+test("hex selection exposes exact offsets and values and supports file/row keyboard navigation", async () => {
+  const bytes = new Uint8Array(67);
+  bytes[66] = 0x7f;
+  const app = await mount(bytes);
+  try {
+    const viewport = app.$("hexViewport");
+    Object.defineProperty(viewport, "clientHeight", { value: 76 });
+    viewport.style.lineHeight = "19px";
+    const key = (value, ctrlKey = false) => viewport.dispatchEvent(
+      new app.window.KeyboardEvent("keydown", { key: value, ctrlKey, bubbles: true }),
+    );
+    key("End", true);
+    const selected = app.$("hexRows").querySelector('[aria-selected="true"]');
+    assert.equal(selected.dataset.byte, "66");
+    assert.match(selected.getAttribute("aria-label"), /0x00000042, hex 7F, decimal 127/);
+    assert.equal(viewport.getAttribute("aria-activedescendant"), selected.id);
+    assert.equal(viewport.getAttribute("aria-rowcount"), "5");
+    assert.match(app.$("inspector").textContent, /0x00000042/);
+    key("Home");
+    assert.equal(viewport.getAttribute("aria-activedescendant"), "byte-64");
+    key("Home", true);
+    assert.equal(viewport.getAttribute("aria-activedescendant"), "byte-0");
+    app.$("hexRows").querySelector('[data-byte="3"]').click();
+    assert.equal(app.window.document.activeElement, viewport);
+    key("ArrowRight");
+    assert.equal(viewport.getAttribute("aria-activedescendant"), "byte-4");
+  } finally {
+    app.close();
+  }
+});
+
+test("hex virtual scrolling reaches the last byte at different line heights and after geometry changes", async () => {
+  const bytes = new Uint8Array(8 * 1024 * 1024 + 3);
+  bytes[bytes.length - 1] = 0xab;
+  const app = await mount(bytes);
+  try {
+    const viewport = app.$("hexViewport");
+    Object.defineProperty(viewport, "clientHeight", { value: 320 });
+    for (const height of [19, 27, 32]) {
+      viewport.style.lineHeight = `${height}px`;
+      viewport.dispatchEvent(new app.window.KeyboardEvent("keydown", { key: "Home", ctrlKey: true }));
+      viewport.dispatchEvent(new app.window.KeyboardEvent("keydown", { key: "End", ctrlKey: true }));
+      const last = app.$("hexRows").querySelector(`[data-byte="${bytes.length - 1}"]`);
+      assert.ok(last, `last byte rendered at ${height}px line height`);
+      assert.equal(last.textContent, "AB");
+      assert.equal(last.getAttribute("aria-selected"), "true");
+      assert.match(app.$("inspector").textContent, /0x00800002/);
+      assert.ok(app.$("hexRows").children.length < 40, "only visible rows are painted");
+      const spacerHeight = parseFloat(app.$("hexSpacer").style.height);
+      const scale = (Math.ceil(bytes.length / 16) * height - 320) / (spacerHeight - 320);
+      const rowTop = parseFloat(app.$("hexRows").style.top)
+        + (Number(last.closest('[role="row"]').getAttribute("aria-rowindex")) - Number(app.$("hexRows").firstElementChild.getAttribute("aria-rowindex"))) * height;
+      assert.ok(rowTop >= viewport.scrollTop && rowTop + height <= viewport.scrollTop + 320);
+      assert.ok(scale > 1, "large file uses the compressed scrollbar");
+    }
+    viewport.scrollTop = 0;
+    viewport.dispatchEvent(new app.window.Event("scroll"));
+    assert.equal(viewport.hasAttribute("aria-activedescendant"), false, "no dangling descendant when selection is offscreen");
+  } finally {
+    app.close();
+  }
+});

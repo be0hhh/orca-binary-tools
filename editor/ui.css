@@ -13,11 +13,17 @@
   --danger: var(--orca-destructive, #b42318);
   --radius: var(--orca-radius, 6px);
   color-scheme: light;
-  font:
-    12px/1.5 system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  /* Snapshot of Orca's code editor: Fira Code preference, 14px, automatic
+     Windows Monaco line height (round(14 * 1.35)). The frame API exposes
+     colors, but not live code-editor typography settings. */
+  --code-font-family: "Fira Code", "Cascadia Mono", Consolas, "Courier New", monospace;
+  --code-font-size: 14px;
+  --code-line-height: 19px;
+  font-family: var(--code-font-family);
+  font-size: var(--code-font-size);
+  line-height: var(--code-line-height);
+  font-weight: 400;
+  font-feature-settings: "liga" off, "calt" off;
 }
 :root.dark {
   --bg: var(--orca-card, var(--orca-background, #242424));
@@ -58,7 +64,8 @@ select {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg);
-  min-height: 25px;
+  line-height: inherit;
+  min-height: calc(var(--code-line-height) + 8px);
   padding: 2px 7px;
 }
 button {
@@ -92,7 +99,7 @@ input::placeholder {
 }
 .mono,
 td.number {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: var(--code-font-family);
   font-variant-numeric: tabular-nums;
 }
 .layout {
@@ -102,7 +109,7 @@ td.number {
   min-width: 0;
 }
 nav {
-  width: 112px;
+  width: 19ch;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   padding: 5px 3px;
@@ -116,8 +123,8 @@ nav button {
   background: none;
   padding: 4px 7px;
   margin-bottom: 1px;
-  min-height: 27px;
-  font-size: 11px;
+  min-height: calc(var(--code-line-height) + 8px);
+  font-size: inherit;
 }
 nav button.active {
   background: var(--accent);
@@ -142,7 +149,7 @@ main {
   gap: 8px;
   min-height: 29px;
   padding: 4px 10px;
-  font-size: 10px;
+  font-size: inherit;
   color: var(--muted-fg);
   border-bottom: 1px solid var(--border);
 }
@@ -162,8 +169,8 @@ main {
   background: none;
   border: 0;
   padding: 0;
-  min-height: 20px;
-  font-size: 10px;
+  min-height: var(--code-line-height);
+  font-size: inherit;
   max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -191,7 +198,7 @@ main {
   flex-wrap: wrap;
   gap: 7px;
   padding: 12px;
-  font-size: 11px;
+  font-size: inherit;
 }
 .pane {
   flex: 1;
@@ -207,7 +214,7 @@ main {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 4px 12px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -218,7 +225,7 @@ main {
 }
 .count {
   margin-left: auto;
-  font-size: 10px;
+  font-size: inherit;
   white-space: nowrap;
 }
 .table-scroll {
@@ -229,7 +236,8 @@ main {
 table {
   border-collapse: collapse;
   width: 100%;
-  font-size: 11px;
+  font-size: inherit;
+  line-height: inherit;
 }
 th {
   position: sticky;
@@ -243,7 +251,7 @@ th {
 }
 th,
 td {
-  padding: 6px 10px;
+  padding: 4px 12px;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
@@ -270,14 +278,14 @@ tbody tr:hover {
   background: var(--muted);
 }
 td button {
-  min-height: 22px;
+  min-height: calc(var(--code-line-height) + 4px);
   padding: 1px 5px;
-  font-size: 10px;
+  font-size: inherit;
 }
 .empty {
   padding: 20px 12px;
   color: var(--muted-fg);
-  font-size: 11px;
+  font-size: inherit;
 }
 .pagination {
   display: flex;
@@ -286,11 +294,11 @@ td button {
   gap: 7px;
   padding: 5px 10px;
   border-top: 1px solid var(--border);
-  font-size: 10px;
+  font-size: inherit;
 }
 .pagination button {
-  font-size: 10px;
-  min-height: 22px;
+  font-size: inherit;
+  min-height: calc(var(--code-line-height) + 4px);
 }
 .notice {
   flex-shrink: 0;
@@ -298,7 +306,7 @@ td button {
   border-bottom: 1px solid var(--border);
   background: var(--muted);
   color: var(--fg);
-  font-size: 11px;
+  font-size: inherit;
   max-height: 70px;
   overflow: auto;
 }
@@ -328,7 +336,7 @@ td button {
   align-items: center;
   margin-left: auto;
   color: var(--muted-fg);
-  font-size: 11px;
+  font-size: inherit;
 }
 .offset-control input {
   width: 100px;
@@ -344,14 +352,10 @@ td button {
   min-width: 0;
   overflow: auto;
   position: relative;
-  font:
-    12px/23px ui-monospace,
-    SFMono-Regular,
-    Consolas,
-    monospace;
+  font: inherit;
 }
 #hexSpacer {
-  width: 620px;
+  width: 84ch;
   pointer-events: none;
 }
 #hexRows {
@@ -361,13 +365,13 @@ td button {
   padding: 0 12px;
 }
 .hex-row {
-  height: 23px;
+  height: 1lh;
   display: flex;
   align-items: center;
   white-space: nowrap;
 }
 .hex-address {
-  width: 86px;
+  width: 12ch;
   color: var(--muted-fg);
   flex-shrink: 0;
 }
@@ -377,7 +381,7 @@ td button {
   margin-right: 16px;
 }
 .hex-byte {
-  width: 24px;
+  width: 3ch;
   text-align: center;
   cursor: pointer;
   border-radius: 2px;
@@ -401,7 +405,7 @@ td button {
   display: flex;
 }
 .ascii-char {
-  width: 8px;
+  width: 1ch;
   text-align: center;
   cursor: pointer;
 }
@@ -423,7 +427,7 @@ td button {
   color: var(--primary-fg);
 }
 #inspector {
-  width: 236px;
+  width: 38ch;
   border-left: 1px solid var(--border);
   overflow: auto;
   flex-shrink: 0;
@@ -431,11 +435,11 @@ td button {
 }
 #inspector h2 {
   margin: 0 0 8px;
-  font-size: 11px;
+  font-size: inherit;
 }
 #inspector h3 {
   margin: 16px 0 6px;
-  font-size: 10px;
+  font-size: inherit;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted-fg);
@@ -443,9 +447,10 @@ td button {
 }
 .inspector-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
+  gap: 2px 8px;
+  font-size: inherit;
   padding: 3px 0;
 }
 .inspector-row span:first-child {
@@ -455,7 +460,7 @@ td button {
   text-align: right;
   overflow-wrap: anywhere;
   min-width: 0;
-  font-family: ui-monospace, monospace;
+  font-family: var(--code-font-family);
 }
 .string-value {
   white-space: pre-wrap;
@@ -469,7 +474,7 @@ td button {
 
 @media (max-width: 850px) {
   #inspector {
-    width: 200px;
+    width: 34ch;
   }
   .hex-toolbar {
     gap: 5px;
