@@ -1,16 +1,16 @@
 {
   "scopeName": "source.asm",
   "name": "Assembly",
-  "fileTypes": [
-    "s",
-    "S"
-  ],
+  "fileTypes": ["s", "S"],
   "patterns": [
     {
       "include": "#comments-block"
     },
     {
       "include": "#c-preprocessor"
+    },
+    {
+      "include": "#immediates"
     },
     {
       "include": "#comments-line"
@@ -25,7 +25,7 @@
       "include": "#directives"
     },
     {
-      "include": "#immediates"
+      "include": "#instructions"
     },
     {
       "include": "#registers-generic"
@@ -78,7 +78,7 @@
         },
         {
           "name": "comment.line.at.asm",
-          "match": "@.*$"
+          "match": "@(?!function\\b|object\\b|progbits\\b|nobits\\b|gnu_indirect_function\\b).*"
         },
         {
           "name": "comment.line.hash.asm",
@@ -165,7 +165,7 @@
         },
         {
           "name": "constant.numeric.immediate.arm.asm",
-          "match": "#(?:0x[0-9a-fA-F]+|-?[0-9]+|:[a-zA-Z0-9_]+:)"
+          "match": "#(?:[+-]?(?:0[xX][0-9a-fA-F]+|[0-9]+)(?![a-zA-Z0-9_])|:[a-zA-Z0-9_]+:)"
         }
       ]
     },
@@ -202,6 +202,14 @@
         {
           "name": "constant.numeric.decimal.asm",
           "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "instructions": {
+      "patterns": [
+        {
+          "name": "keyword.instruction.asm",
+          "match": "(?i)(?<=^|:)\\s*\\b(?:mov[a-z]*|lea[a-z]*|push[a-z]*|pop[a-z]*|add[a-z]*|sub[a-z]*|mul[a-z]*|div[a-z]*|xor[a-z]*|and[a-z]*|or[a-z]*|cmp[a-z]*|test[a-z]*|call[a-z]*|ret[a-z]*|j[a-z]+|syscall|svc|adrp?|ldr[a-z]*|str[a-z]*|b(?:\\.[a-z]+)?|bl|br|nop)\\b"
         }
       ]
     }

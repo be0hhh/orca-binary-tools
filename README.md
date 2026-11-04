@@ -1,59 +1,49 @@
-# Binary & Assembly Tools for Orca
+# Binary & Assembly Tools
 
-[![Release](https://img.shields.io/github/v/release/be0hhh/orca-binary-tools?color=blue&label=release)](https://github.com/be0hhh/orca-binary-tools/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Orca Plugin](https://img.shields.io/badge/Orca-Plugin-orange.svg)](https://onorca.dev/)
+Binary inspection and Assembly highlighting for Orca, using the current Orca theme.
 
-<p align="center">
-  <img src="assets/cover.jpg" alt="Binary & Assembly Tools Cover" width="100%">
-</p>
+![Binary Inspector overview](assets/cover.png)
 
-An extension for [Orca](https://useorca.com/) providing low-level binary inspection and syntax highlighting for Assembly languages.
+Binary files open directly inside Orca's editor tabs. No website, local server, or external application is required.
 
----
+## Open an inspection
 
-## Features
+Choose **New binary inspection** from the tab bar **+** menu, the command palette, or the plugin's **Create** action. The empty inspection offers **Try ELF object** and **Try static archive** demonstrations. You can also open a supported file in the editor, use **Open file…**, or drop a local file into the inspector.
 
-### 1. Interactive Binary Inspector
-Visual custom editor for object files, static archives, shared libraries, and executables:
-- **Supported extensions**: `.o`, `.obj`, `.a`, `.lib`, `.so`, `.dylib`, `.dll`, `.exe`, `.bin`, `.elf`, `.out`
-- **Virtualized Hex View**: Smooth 60fps scrolling, byte color grouping (null, printable ASCII, control chars, high bytes), synchronized byte-to-ASCII highlight.
-- **Structure & Headers Tab**: Parses 32-bit & 64-bit ELF headers and section tables, PE/COFF sections, and AR headers. Click any section (`.text`, `.rodata`, `.data`) to jump directly to its offset in the hex view.
-- **Archive Members Tab**: Complete archive viewer for static libraries (`.a`, `.lib`). Inspect individual `.o` object files directly or view in hex. Shows deterministic build timestamps cleanly with navigation back to the archive.
-- **Strings Extractor**: Extract ASCII/UTF-8 strings (length ≥ 4) with search filtering and direct offset jumping.
-- **Interactive Data Inspector**: Collapsible side panel showing 8-bit, 16-bit, 32-bit, 64-bit integers (Little & Big Endian), Float32, Float64, binary bitfield, and ASCII representation for any selected byte.
-- **Large File Support**: Handles large binaries smoothly via chunked streaming and responsive virtualized scrolling.
+The syntax contribution's **Try** action in Orca creates an empty source file. For filled source examples use **New Intel assembly example**, **New AT&T assembly example**, or **New ARM assembly example**. These templates open in the normal Orca text editor.
 
-### 2. Assembly Syntax Highlighting
-- **x86 & x86_64** (`.asm`, `.inc`): Intel and AT&T syntax, registers (`rax`, `r15`, `ymm0`, `zmm0`), instructions (AVX-512, SSE, VMX, AMX), NASM/FASM directives.
-- **ARM & AArch64** (`.arm`, `.a64`): 32-bit ARM and 64-bit AArch64 instructions, NEON vectors (`v0.4s`), condition codes, shift operands.
-- **GAS / AT&T** (`.s`): GNU Assembler directives (`.globl`, `.section`, `.cfi_*`), labels, AT&T operands (`%rax`, `(%rdi,%rsi,4)`).
+## Binary inspection
 
----
+- **Overview** summarizes format, architecture, file size and the image size declared by load headers. **Sections** lists file and memory sizes separately.
+- **Symbols** searches and sorts available ELF, COFF and PE names, addresses, bindings, visibility and declared sizes. Function/data/import/export filters select metadata actually present in the file. Names remain as recorded, including C++ mangled names; no external tools run.
+- **Archive objects** lists AR members, including GNU and BSD long names. Inspect a member, then use the archive breadcrumb to return to its previous table state. Index and name-table members are marked as metadata.
+- **Hex** shows synchronized bytes and ASCII, an optional data inspector, explicit hex/text search and decimal or `0x` offset navigation. Hex queries accept both `7F454C46` and `7F 45 4C 46`. Arrow keys move the selected byte when the byte view is focused. Search shows up to 100,000 matches with an explicit limit notice; narrow the query if this limit is reached.
+- **Strings** extracts UTF-8 strings of at least four characters. Filtering and cursor-based page scans keep every extracted string accessible without retaining the whole result set. Very long strings have a marked 4,096-character preview; **View bytes** opens the complete range.
 
-## Installation
+Supported structural analysis: ELF32/ELF64, little/big endian, ELF symbol tables and load headers; PE32/PE32+ sections/imports/exports; ordinary COFF objects; GNU/BSD AR archives. Mach-O and unknown formats remain available as hex and strings. Thin archives cannot inspect external members. Unsupported metadata variants produce a notice while preserving the byte view.
 
-### Method 1: In Orca Settings (Recommended)
-1. Open Orca and go to **Settings** (`Ctrl+,`) → **Plugins**.
-2. Click **Add Plugin** / **Install from Git URL**.
-3. Paste the repository URL:
-   ```
-   https://github.com/be0hhh/orca-binary-tools
-   ```
-4. Click **Install**, then click **Review** → **Approve** when prompted.
+File sizes are limited to **64 MiB**, matching Orca's document bridge limit. Larger local files are rejected rather than silently truncated. Search and string extraction yield between chunks and cancel when the inspected document changes.
 
-### Method 2: Manual Clone
-Clone directly into your Orca plugins directory:
+Memory sizes describe headers and sections, **not process RAM usage**. Relocatable object files and archives have no declared loaded image size. Missing symbol sizes are shown as **—**, not estimated from neighboring addresses; zero-filled sections have no file bytes to jump to. Stripped files can have no symbols. PE imports/exports often provide names without sizes. Raw section and symbol values remain distinguishable from mapped file offsets.
+
+The inspector only reads bytes. It does not edit or execute the inspected program. Opening a local file or a demo changes the inspection view, not the contents of the Orca document behind it.
+
+## Assembly syntax
+
+- x86/x86-64 Intel and AT&T: `.asm`, `.inc`.
+- ARM/AArch64: `.arm`, `.a64`.
+- GNU Assembly: `.s`, including numeric ARM immediates such as `#1` and GNU preprocessor directives. GAS accepts several architectures; this generic grammar does not infer the target CPU.
+
+## Validation
+
+Run the parser and search regression suite with:
+
 ```sh
-# Linux / macOS
-git clone https://github.com/be0hhh/orca-binary-tools.git ~/.orca/plugins/be0hhh.binary-tools
-
-# Windows
-git clone https://github.com/be0hhh/orca-binary-tools.git "%APPDATA%\orca\plugins\be0hhh.binary-tools"
+node --test tests/binary-core.test.mjs
 ```
 
----
+UI acceptance includes archive/member/back navigation, replacement during search, empty files, malformed headers, explicit hex/text queries, keyboard navigation, both Orca theme modes and narrow panels.
 
 ## License
 
-MIT © [be0hhh](https://github.com/be0hhh)
+MIT

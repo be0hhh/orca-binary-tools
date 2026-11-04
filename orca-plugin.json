@@ -3,12 +3,12 @@
   "id": "binary-tools",
   "publisher": "be0hhh",
   "name": "Binary & Assembly Tools",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "execution": "sandboxed-ui",
-  "description": "Low-level binary inspection (ELF, AR archives, PE/COFF) with virtualized hex view, data inspector, and assembly syntax highlighting (x86/x64, ARM, GAS).",
+  "description": "Native-style binary inspection for ELF, PE/COFF and AR archives: searchable symbols, section sizes, hex, strings and Assembly highlighting.",
   "cover": {
-    "path": "assets/cover.jpg",
-    "alt": "Binary & Assembly Tools"
+    "path": "assets/cover.png",
+    "alt": "Binary Inspector overview with native-style navigation, sections and size information"
   },
   "license": "MIT",
   "repository": "https://github.com/be0hhh/orca-binary-tools",
@@ -73,6 +73,31 @@
         "entry": "editor/index.html",
         "priority": "default",
         "contentKind": "bytes"
+      }
+    ],
+    "newFiles": [
+      {
+        "id": "binary-inspection",
+        "title": "New binary inspection",
+        "extension": ".bin"
+      },
+      {
+        "id": "example-intel",
+        "title": "New Intel assembly example",
+        "extension": ".asm",
+        "template": "samples/hello_x86_intel.asm"
+      },
+      {
+        "id": "example-att",
+        "title": "New AT&T assembly example",
+        "extension": ".s",
+        "template": "samples/hello_x86_att.s"
+      },
+      {
+        "id": "example-arm",
+        "title": "New ARM assembly example",
+        "extension": ".arm",
+        "template": "samples/hello_arm.s"
       }
     ]
   },
