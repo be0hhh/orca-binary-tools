@@ -3,7 +3,7 @@
   "id": "binary-tools",
   "publisher": "be0hhh",
   "name": "Binary & Assembly Tools",
-  "version": "1.1.2",
+  "version": "1.1.4",
   "execution": "sandboxed-ui",
   "description": "Native-style binary inspection for ELF, PE/COFF and AR archives: searchable symbols, section sizes, hex, strings and Assembly highlighting.",
   "cover": {

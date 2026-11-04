@@ -12,15 +12,21 @@
       <select id="compactNavigation" aria-label="Inspection section"></select>
       <main id="main" tabindex="-1">
         <div id="metadata" class="metadata" hidden>
+          <button id="openFile" type="button" hidden disabled>Open file</button>
+          <input
+            id="filePicker"
+            type="file"
+            aria-label="Choose a binary file"
+            hidden
+            disabled
+          />
           <span id="archiveBack" class="archive-back"></span>
           <span id="fileSummary" class="file-summary"></span>
           <span id="statusTask" class="task" role="status"></span>
         </div>
         <div id="notice" class="notice" role="status" hidden></div>
         <div id="emptyState" class="empty-state" hidden>
-          <span class="muted">Empty binary. Try a demonstration:</span>
-          <button id="demoObject">ELF object</button>
-          <button id="demoArchive">Static archive</button>
+          <span id="emptyHint" class="muted">Opening binary…</span>
         </div>
         <section id="pane-table" class="pane table-pane" hidden>
           <div class="section-toolbar">
@@ -53,9 +59,9 @@
               type="search"
               placeholder="7F 45 4C 46"
               aria-label="Search bytes"
+              title="Press Enter to search"
             />
-            <button id="findBytes">Find</button
-            ><button id="previousMatch" title="Previous match">↑</button
+            <button id="previousMatch" title="Previous match">↑</button
             ><button id="nextMatch" title="Next match">↓</button>
             <span id="matchCount" class="muted count" aria-live="polite"></span>
             <label class="offset-control"
