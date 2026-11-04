@@ -82,7 +82,6 @@ button:disabled {
   cursor: default;
 }
 button:focus-visible,
-a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 [tabindex]:focus-visible {
@@ -319,6 +318,10 @@ td button {
   overflow-wrap: anywhere;
   max-width: 700px;
 }
+.row-actions {
+  display: flex;
+  gap: 4px;
+}
 .hex-pane {
   display: flex;
   flex-direction: column;
@@ -464,6 +467,10 @@ td button {
   overflow-wrap: anywhere;
   max-width: 700px;
 }
+.row-actions {
+  display: flex;
+  gap: 4px;
+}
 
 @media (max-width: 850px) {
   #inspector {
@@ -521,14 +528,4 @@ td button {
   td {
     padding: 6px 8px;
   }
-}
-
-td a {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--border);
-  text-underline-offset: 3px;
-}
-td a:hover {
-  text-decoration-color: currentColor;
 }

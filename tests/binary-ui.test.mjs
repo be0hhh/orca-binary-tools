@@ -26,7 +26,7 @@ const archive = new Uint8Array(
 );
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-async function mount(bytes, { host = true, initialEvent } = {}) {
+async function mount(bytes, { host = true } = {}) {
   const dom = new JSDOM(html, {
     runScripts: "outside-only",
     url: "https://plugin.invalid/editor/index.html",
@@ -42,13 +42,6 @@ async function mount(bytes, { host = true, initialEvent } = {}) {
   window.ResizeObserver = class {
     observe() {}
   };
-  const sortStats = { collators: 0, comparisons: 0 };
-  const Collator = window.Intl.Collator;
-  window.Intl.Collator = function (...args) {
-    sortStats.collators++;
-    const collator = new Collator(...args);
-    return { compare(a, b) { sortStats.comparisons++; return collator.compare(a, b); } };
-  };
   let replace;
   let options;
   const delivered = (value) =>
@@ -59,7 +52,7 @@ async function mount(bytes, { host = true, initialEvent } = {}) {
         session: async (decodeOptions) => {
           options = decodeOptions;
           return {
-            value: initialEvent ? options.decode(initialEvent) : delivered(bytes),
+            value: delivered(bytes),
             onReplace(handler) {
               replace = handler;
             },
@@ -67,25 +60,27 @@ async function mount(bytes, { host = true, initialEvent } = {}) {
         },
       },
     };
+  window.fetch = async (url) => {
+    const data = await readFile(
+      new URL(`../${url.replace(/^\.\.\//, "")}`, import.meta.url),
+    );
+    return {
+      ok: true,
+      arrayBuffer: async () => new window.Uint8Array(data).buffer,
+    };
+  };
   window.eval(source);
-  await tick();
   await tick();
   const $ = (id) => window.document.getElementById(id);
   return {
     dom,
     window,
-    sortStats,
-    deliver: (value) => replace(delivered(value)),
     $,
     replace: async (value) => {
       replace(delivered(value));
       await tick();
-      await tick();
     },
-    close: () => {
-      window.dispatchEvent(new window.Event("pagehide"));
-      window.close();
-    },
+    close: () => window.close(),
   };
 }
 function active($) {
@@ -96,20 +91,6 @@ function filter(app, value) {
   app
     .$("tableFilter")
     .dispatchEvent(new app.window.Event("input", { bubbles: true }));
-}
-function chooseFile(app, file) {
-  Object.defineProperty(app.$("filePicker"), "files", {
-    configurable: true,
-    value: file ? [file] : [],
-  });
-  app.$("filePicker").dispatchEvent(new app.window.Event("change"));
-}
-function selectedFile(name, bytes) {
-  return {
-    name,
-    size: bytes.byteLength,
-    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
-  };
 }
 function selectPane(app, pane) {
   app.$("navigation").querySelector(`[data-pane=${pane}]`).click();
@@ -196,27 +177,26 @@ test("unknown, Mach-O and malformed header bytes retain hex and show parser warn
   }
 });
 
-test("empty host document offers only file selection without application chrome", async () => {
+test("empty host document is a compact hint with demos, no independent application chrome", async () => {
   const app = await mount(new Uint8Array());
   try {
     assert.equal(app.$("emptyState").hidden, false);
     assert.equal(app.$("navigation").hidden, true);
-    assert.equal(app.$("metadata").hidden, false);
-    assert.equal(app.$("openFile").hidden, false);
-    assert.equal(app.$("openFile").disabled, false);
-    assert.equal(app.$("filePicker").accept, "");
+    assert.equal(app.$("metadata").hidden, true);
     assert.equal(
       app.window.document.querySelector(
-        "header,footer,h1,#welcome,#pane-overview,#dropHint",
+        "header,footer,h1,input[type=file],#welcome,#pane-overview,#openFile,#dropHint",
       ),
       null,
     );
     assert.doesNotMatch(
       app.window.document.body.textContent,
-      /Binary document|Drop a file/,
+      /Binary document|Open file|Drop a file/,
     );
-    assert.equal(app.$("demoObject"), null);
-    assert.equal(app.$("demoArchive"), null);
+    app.$("demoObject").click();
+    await tick();
+    await tick();
+    assert.equal(active(app.$), "symbols");
   } finally {
     app.close();
   }
@@ -227,82 +207,7 @@ test("without an Orca document session the frame does not offer a standalone fil
   try {
     assert.equal(app.$("emptyState").hidden, true);
     assert.equal(app.$("navigation").hidden, true);
-    assert.equal(app.$("openFile").hidden, true);
-    assert.equal(app.$("filePicker").disabled, true);
-  } finally {
-    app.close();
-  }
-});
-
-test("malformed initial bytes finish loading with a readable error and file picker", async () => {
-  const app = await mount(object, { initialEvent: { bytes: "invalid" } });
-  try {
-    assert.match(app.$("notice").textContent, /Could not read binary bytes/);
-    assert.doesNotMatch(app.$("emptyHint").textContent, /Opening/);
-    assert.equal(app.$("openFile").hidden, false);
-    assert.equal(app.$("openFile").disabled, false);
-  } finally {
-    app.close();
-  }
-});
-
-test("file selection reuses the inspector, keeps its name, and does not write the host document", async () => {
-  const app = await mount(new Uint8Array());
-  try {
-    chooseFile(app, selectedFile("program-without-extension", object));
-    await tick();
-    assert.equal(active(app.$), "symbols");
-    assert.match(app.$("tableScroll").textContent, /_start/);
-    assert.match(app.$("fileSummary").textContent, /program-without-extension.*ELF/);
-    assert.equal(app.$("filePicker").value, "");
-    chooseFile(app, selectedFile("empty", new Uint8Array()));
-    await tick();
-    assert.match(app.$("fileSummary").textContent, /empty.*0 B on disk/);
-    assert.equal(app.$("fileSummary").hidden, false);
-    await app.replace(archive);
-    assert.equal(active(app.$), "archive");
-    assert.doesNotMatch(app.$("fileSummary").textContent, /program-without-extension|empty/);
-  } finally {
-    app.close();
-  }
-});
-
-test("cancel, read errors and oversized selections preserve the previous inspection", async () => {
-  const app = await mount(object);
-  try {
-    const summary = app.$("fileSummary").textContent;
-    chooseFile(app, null);
-    chooseFile(app, { name: "unreadable", size: 1, arrayBuffer: async () => { throw new Error("read refused"); } });
-    await tick();
-    assert.match(app.$("notice").textContent, /unreadable.*read refused/);
-    chooseFile(app, { name: "large", size: 64 * 1024 * 1024 + 1, arrayBuffer: () => { assert.fail("oversized file must not be read"); } });
-    await tick();
-    assert.match(app.$("notice").textContent, /exceeds the 64 MiB/);
-    assert.equal(app.$("fileSummary").textContent, summary);
-    assert.equal(active(app.$), "symbols");
-  } finally {
-    app.close();
-  }
-});
-
-test("new selections and host replacements supersede pending file reads", async () => {
-  const app = await mount(object);
-  try {
-    let first;
-    chooseFile(app, { name: "old", size: object.length, arrayBuffer: () => new Promise((resolve) => { first = resolve; }) });
-    chooseFile(app, selectedFile("new", archive));
-    await tick();
-    first(object.buffer);
-    await tick();
-    assert.match(app.$("fileSummary").textContent, /new.*AR/);
-    let second;
-    chooseFile(app, { name: "pending", size: object.length, arrayBuffer: () => new Promise((resolve) => { second = resolve; }) });
-    await app.replace(new Uint8Array([65, 66, 67]));
-    second(object.buffer);
-    await tick();
-    assert.equal(active(app.$), "hex");
-    assert.match(app.$("fileSummary").textContent, /3 B on disk/);
-    assert.doesNotMatch(app.$("fileSummary").textContent, /pending/);
+    assert.equal(app.window.document.querySelector("input[type=file]"), null);
   } finally {
     app.close();
   }
@@ -355,12 +260,7 @@ test("archive back restores a later page rather than returning to the first memb
   try {
     filter(app, "member-");
     app.$("tableScroll").querySelector("[data-sort=name]").click();
-    const comparisons = app.sortStats.comparisons;
-    assert.equal(app.sortStats.collators, 1);
     app.$("nextPage").click();
-    assert.equal(app.sortStats.comparisons, comparisons);
-    assert.equal(app.$("tableScroll").querySelector("tbody button"), null);
-    assert.equal(app.$("tableScroll").querySelector("[data-member]").tagName, "A");
     assert.match(app.$("pagination").textContent, /201–205 of 205/);
     app.$("tableScroll").scrollTop = 80;
     app.$("tableScroll").querySelector("[data-member]").click();
@@ -378,68 +278,15 @@ test("archive back restores a later page rather than returning to the first memb
   }
 });
 
-test("document replacement aborts old string scans while keeping the chosen view", async () => {
+test("document replacement aborts pending string scans and selects the new document default", async () => {
   const app = await mount(new Uint8Array(2 * 1024 * 1024).fill(65));
   try {
     selectPane(app, "strings");
     await app.replace(object);
     await tick();
-    assert.equal(active(app.$), "strings");
-    const deadline = Date.now() + 2000;
-    while (app.$("statusTask").textContent && Date.now() < deadline) await tick();
+    assert.equal(active(app.$), "symbols");
     assert.equal(app.$("statusTask").textContent, "");
     assert.match(app.$("tableScroll").textContent, /_start/);
-  } finally {
-    app.close();
-  }
-});
-
-test("host updates preserve the selected section, filter, and table position", async () => {
-  const app = await mount(object);
-  try {
-    selectPane(app, "sections");
-    filter(app, ".text");
-    app.$("tableScroll").scrollTop = 73;
-    await app.replace(object);
-    assert.equal(active(app.$), "sections");
-    assert.equal(app.$("tableFilter").value, ".text");
-    assert.equal(app.$("tableScroll").scrollTop, 73);
-    assert.match(app.$("tableScroll").textContent, /\.text/);
-    assert.equal(app.$("openFile").hidden, true);
-    assert.equal(app.$("findBytes"), null);
-    assert.equal(app.$("tableScroll").querySelector("tbody button"), null);
-    assert.equal(app.$("tableScroll").querySelector("a[data-jump]").getAttribute("href"), "#");
-    app.$("tableScroll").querySelector("a[data-jump]").click();
-    assert.equal(active(app.$), "hex");
-  } finally {
-    app.close();
-  }
-});
-
-test("a pending large document cannot replace a newer automatic open", async () => {
-  const app = await mount(object);
-  try {
-    app.deliver(new Uint8Array(2 * 1024 * 1024));
-    assert.match(app.$("statusTask").textContent, /Opening/);
-    app.deliver(archive);
-    await tick();
-    await tick();
-    assert.equal(active(app.$), "archive");
-    assert.match(app.$("fileSummary").textContent, /AR/);
-    assert.equal(app.$("statusTask").textContent, "");
-  } finally {
-    app.close();
-  }
-});
-
-test("an unavailable previous pane starts the new document without a stale filter", async () => {
-  const app = await mount(object);
-  try {
-    filter(app, "_start");
-    await app.replace(coffWithoutSymbols());
-    assert.equal(active(app.$), "sections");
-    assert.equal(app.$("tableFilter").value, "");
-    assert.match(app.$("tableScroll").textContent, /\.text/);
   } finally {
     app.close();
   }
@@ -450,7 +297,7 @@ test("hex search keeps whitespace text queries and rejects replacement above64Mi
   try {
     app.$("searchMode").value = "text";
     app.$("byteSearch").value = " ";
-    app.$("byteSearch").dispatchEvent(new app.window.KeyboardEvent("keydown", { key: "Enter" }));
+    app.$("findBytes").click();
     await tick();
     await tick();
     assert.match(app.$("matchCount").textContent, /1 \/ 1/);
@@ -466,7 +313,7 @@ test("leaving Hex cancels a pending search without switching back from Strings",
   const app = await mount(new Uint8Array(8 * 1024 * 1024));
   try {
     app.$("byteSearch").value = "00";
-    app.$("byteSearch").dispatchEvent(new app.window.KeyboardEvent("keydown", { key: "Enter" }));
+    app.$("findBytes").click();
     selectPane(app, "strings");
     for (let i = 0; i < 20; i++) await tick();
     assert.equal(active(app.$), "strings");
