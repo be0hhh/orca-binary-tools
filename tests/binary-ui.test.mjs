@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
+import * as byteSources from "../editor/byte-source.mjs";
 import {
   parseBinary,
   searchBytes,
@@ -17,7 +18,7 @@ const source = (
 ).replace(
   /^import \{[^}]+\} from "\.\/binary-core\.mjs";/,
   "const { parseBinary, searchBytes, scanStrings } = window.testCore;",
-);
+).replace(/^import \{[^}]+\} from "\.\/byte-source\.mjs";/m, "const { bytesSource, fileSource, rangeSource, pagedSource, subSource, MAX_FILE_BYTES } = window.testSources;");
 const object = new Uint8Array(
   await readFile(new URL("../samples/sample.o", import.meta.url)),
 );
@@ -26,13 +27,14 @@ const archive = new Uint8Array(
 );
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-async function mount(bytes, { host = true, initialEvent } = {}) {
+async function mount(bytes, { host = true, initialEvent, ranged } = {}) {
   const dom = new JSDOM(html, {
     runScripts: "outside-only",
     url: "https://plugin.invalid/editor/index.html",
   });
   const { window } = dom;
   window.testCore = { parseBinary, searchBytes, scanStrings };
+  window.testSources = byteSources;
   // The real core module shares the frame realm; use the same byte constructors here.
   window.Uint8Array = Uint8Array;
   window.ArrayBuffer = ArrayBuffer;
@@ -50,6 +52,10 @@ async function mount(bytes, { host = true, initialEvent } = {}) {
     return { compare(a, b) { sortStats.comparisons++; return collator.compare(a, b); } };
   };
   let replace;
+  let invalidate;
+  let rangeVersion = 1;
+  let reloads = 0;
+  const rangeReads = [];
   let options;
   const delivered = (value) =>
     options.decode({ bytes: new window.Uint8Array(value) });
@@ -67,6 +73,26 @@ async function mount(bytes, { host = true, initialEvent } = {}) {
         },
       },
     };
+  if (ranged) {
+    const descriptor = () => ({ version: rangeVersion, byteLength: ranged.byteLength ?? bytes.length, maxReadBytes: 262144, readOnly: true });
+    window.orca = { document: {
+      session() { assert.fail("range mode must not request the full-buffer session"); },
+      async rangeSession() {
+        return {
+          value: descriptor(),
+          async readRange(request, { signal } = {}) {
+            rangeReads.push(request);
+            if (ranged.read) return ranged.read(request, signal);
+            const data = bytes.slice(request.offset, request.offset + request.length);
+            return { version: request.version, bytes: data.buffer, eof: request.offset + data.length === bytes.length };
+          },
+          onInvalidate(handler) { invalidate = handler; return { dispose() { invalidate = null; } }; },
+          async reload() { reloads++; return descriptor(); },
+          dispose() {},
+        };
+      },
+    } };
+  }
   window.eval(source);
   await tick();
   await tick();
@@ -75,6 +101,9 @@ async function mount(bytes, { host = true, initialEvent } = {}) {
     dom,
     window,
     sortStats,
+    rangeReads,
+    get reloads() { return reloads; },
+    invalidate: () => { rangeVersion++; invalidate?.({ version: rangeVersion, byteLength: ranged?.byteLength ?? bytes.length, maxReadBytes: 262144, readOnly: true }); },
     deliver: (value) => replace(delivered(value)),
     $,
     replace: async (value) => {
@@ -108,7 +137,7 @@ function selectedFile(name, bytes) {
   return {
     name,
     size: bytes.byteLength,
-    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    slice: (offset, end) => ({ arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset + offset, bytes.byteOffset + end) }),
   };
 }
 function selectPane(app, pane) {
@@ -272,12 +301,12 @@ test("cancel, read errors and oversized selections preserve the previous inspect
   try {
     const summary = app.$("fileSummary").textContent;
     chooseFile(app, null);
-    chooseFile(app, { name: "unreadable", size: 1, arrayBuffer: async () => { throw new Error("read refused"); } });
+    chooseFile(app, { name: "unreadable", size: 4, slice: () => ({ arrayBuffer: async () => { throw new Error("read refused"); } }) });
     await tick();
     assert.match(app.$("notice").textContent, /unreadable.*read refused/);
-    chooseFile(app, { name: "large", size: 64 * 1024 * 1024 + 1, arrayBuffer: () => { assert.fail("oversized file must not be read"); } });
+    chooseFile(app, { name: "large", size: 1024 * 1024 * 1024 + 1, slice: () => { assert.fail("oversized file must not be read"); } });
     await tick();
-    assert.match(app.$("notice").textContent, /exceeds the 64 MiB/);
+    assert.match(app.$("notice").textContent, /exceeds the 1 GiB/);
     assert.equal(app.$("fileSummary").textContent, summary);
     assert.equal(active(app.$), "symbols");
   } finally {
@@ -289,14 +318,14 @@ test("new selections and host replacements supersede pending file reads", async 
   const app = await mount(object);
   try {
     let first;
-    chooseFile(app, { name: "old", size: object.length, arrayBuffer: () => new Promise((resolve) => { first = resolve; }) });
+    chooseFile(app, { name: "old", size: object.length, slice: () => ({ arrayBuffer: () => new Promise((resolve) => { first = resolve; }) }) });
     chooseFile(app, selectedFile("new", archive));
     await tick();
     first(object.buffer);
     await tick();
     assert.match(app.$("fileSummary").textContent, /new.*AR/);
     let second;
-    chooseFile(app, { name: "pending", size: object.length, arrayBuffer: () => new Promise((resolve) => { second = resolve; }) });
+    chooseFile(app, { name: "pending", size: object.length, slice: () => ({ arrayBuffer: () => new Promise((resolve) => { second = resolve; }) }) });
     await app.replace(new Uint8Array([65, 66, 67]));
     second(object.buffer);
     await tick();
@@ -317,6 +346,7 @@ test("archive opens members immediately and back restores filter, order, page an
     app.$("tableScroll").scrollTop = 127;
     const count = app.$("tableCount").textContent;
     app.$("tableScroll").querySelector("[data-member]").click();
+    await tick();
     assert.equal(active(app.$), "symbols");
     assert.equal(app.$("archiveBack").hidden, false);
     app.$("archiveBack").querySelector("button").click();
@@ -364,6 +394,7 @@ test("archive back restores a later page rather than returning to the first memb
     assert.match(app.$("pagination").textContent, /201–205 of 205/);
     app.$("tableScroll").scrollTop = 80;
     app.$("tableScroll").querySelector("[data-member]").click();
+    await tick();
     app.$("archiveBack").querySelector("button").click();
     assert.equal(active(app.$), "archive");
     assert.equal(app.$("tableFilter").value, "member-");
@@ -499,6 +530,7 @@ test("hex selection exposes exact offsets and values and supports file/row keybo
       new app.window.KeyboardEvent("keydown", { key: value, ctrlKey, bubbles: true }),
     );
     key("End", true);
+    await tick();
     const selected = app.$("hexRows").querySelector('[aria-selected="true"]');
     assert.equal(selected.dataset.byte, "66");
     assert.match(selected.getAttribute("aria-label"), /0x00000042, hex 7F, decimal 127/);
@@ -506,12 +538,15 @@ test("hex selection exposes exact offsets and values and supports file/row keybo
     assert.equal(viewport.getAttribute("aria-rowcount"), "5");
     assert.match(app.$("inspector").textContent, /0x00000042/);
     key("Home");
+    await tick();
     assert.equal(viewport.getAttribute("aria-activedescendant"), "byte-64");
     key("Home", true);
+    await tick();
     assert.equal(viewport.getAttribute("aria-activedescendant"), "byte-0");
     app.$("hexRows").querySelector('[data-byte="3"]').click();
     assert.equal(app.window.document.activeElement, viewport);
     key("ArrowRight");
+    await tick();
     assert.equal(viewport.getAttribute("aria-activedescendant"), "byte-4");
   } finally {
     app.close();
@@ -529,6 +564,7 @@ test("hex virtual scrolling reaches the last byte at different line heights and 
       viewport.style.lineHeight = `${height}px`;
       viewport.dispatchEvent(new app.window.KeyboardEvent("keydown", { key: "Home", ctrlKey: true }));
       viewport.dispatchEvent(new app.window.KeyboardEvent("keydown", { key: "End", ctrlKey: true }));
+      await tick();
       const last = app.$("hexRows").querySelector(`[data-byte="${bytes.length - 1}"]`);
       assert.ok(last, `last byte rendered at ${height}px line height`);
       assert.equal(last.textContent, "AB");
@@ -544,8 +580,122 @@ test("hex virtual scrolling reaches the last byte at different line heights and 
     }
     viewport.scrollTop = 0;
     viewport.dispatchEvent(new app.window.Event("scroll"));
+    await tick();
     assert.equal(viewport.hasAttribute("aria-activedescendant"), false, "no dangling descendant when selection is offscreen");
   } finally {
     app.close();
   }
+});
+
+test("range session opens automatically, invalidation clears member state, explicit Reload obtains fresh bytes", async () => {
+  const app = await mount(archive, { ranged: {} });
+  try {
+    assert.equal(active(app.$), "archive");
+    app.$("tableScroll").querySelector("[data-member]").click();
+    await tick();
+    assert.equal(app.$("archiveBack").hidden, false);
+    app.invalidate();
+    await tick();
+    assert.equal(app.$("archiveBack").textContent, "");
+    assert.equal(app.$("tableScroll").textContent, "");
+    assert.equal(app.$("hexRows").textContent, "");
+    assert.equal(app.$("inspector").textContent, "");
+    assert.equal(app.$("reloadFile").hidden, false);
+    assert.match(app.$("notice").textContent, /File changed.*Reload/);
+    const reads = app.rangeReads.length;
+    await tick();
+    assert.equal(app.rangeReads.length, reads, "change does not retry automatically");
+    app.$("reloadFile").click();
+    await tick(); await tick();
+    assert.equal(app.reloads, 1);
+    assert.equal(active(app.$), "archive");
+    assert.equal(app.$("reloadFile").hidden, true);
+    assert.ok(app.rangeReads.slice(reads).every((request) => request.version === 2));
+  } finally { app.close(); }
+});
+
+test("sparse 1 GiB range session paints EOF and inspector from visible pages", async () => {
+  const size = 1024 * 1024 * 1024;
+  const app = await mount(new Uint8Array(), { ranged: { byteLength: size, async read({ version, offset, length }) {
+    const bytes = new Uint8Array(length);
+    if (offset + length === size) bytes[length - 1] = 0xfe;
+    return { version, bytes: bytes.buffer, eof: offset + length === size };
+  } } });
+  try {
+    assert.equal(active(app.$), "hex");
+    assert.match(app.$("fileSummary").textContent, /1.00 GiB/);
+    const viewport = app.$("hexViewport");
+    Object.defineProperty(viewport, "clientHeight", { value: 320 });
+    viewport.dispatchEvent(new app.window.KeyboardEvent("keydown", { key: "End", ctrlKey: true }));
+    await tick();
+    const last = app.$("hexRows").querySelector(`[data-byte="${size - 1}"]`);
+    assert.equal(last.textContent, "FE");
+    assert.equal(last.getAttribute("aria-selected"), "true");
+    assert.match(app.$("inspector").textContent, /0x3FFFFFFF/);
+    assert.ok(app.rangeReads.reduce((sum, request) => sum + request.length, 0) < 512 * 1024);
+  } finally { app.close(); }
+});
+
+test("invalidation while a host range is pending cannot publish its late result", async () => {
+  let finish;
+  const app = await mount(new Uint8Array(), { ranged: { byteLength: 8, read(request) {
+    return new Promise((resolve) => { finish = () => resolve({ version: request.version, bytes: new ArrayBuffer(request.length), eof: true }); });
+  } } });
+  try {
+    app.invalidate(); finish();
+    await tick();
+    assert.equal(app.$("navigation").hidden, true);
+    assert.equal(app.$("reloadFile").hidden, false);
+    assert.equal(app.$("hexRows").textContent, "");
+    assert.match(app.$("notice").textContent, /File changed/);
+    assert.equal(app.reloads, 0);
+  } finally { app.close(); }
+});
+
+test("failed archive member loads preserve the parent without spending nesting depth", async () => {
+  const bytes = new Uint8Array(68 + 131200), encoder = new TextEncoder();
+  bytes.set(encoder.encode("!<arch>\n"));
+  const header = `${"member.o/".padEnd(16)}${"0".padEnd(12)}${"0".padEnd(6)}${"0".padEnd(6)}${"100644".padEnd(8)}${"131200".padEnd(10)}\x60\n`;
+  bytes.set(encoder.encode(header), 8);
+  const view = new DataView(bytes.buffer);
+  bytes.set([0x7f, 0x45, 0x4c, 0x46, 2, 1], 68);
+  view.setUint16(68 + 16, 1, true); view.setUint16(68 + 18, 62, true);
+  view.setBigUint64(68 + 40, 131072n, true);
+  view.setUint16(68 + 58, 64, true); view.setUint16(68 + 60, 1, true);
+  let refuse = true;
+  const app = await mount(bytes, { ranged: { async read({ version, offset, length }) {
+    if (offset >= 65536 && refuse) throw new Error("member read refused");
+    return { version, bytes: bytes.slice(offset, offset + length).buffer, eof: offset + length === bytes.length };
+  } } });
+  try {
+    for (let attempt = 0; attempt < 9; attempt++) {
+      app.$("tableScroll").querySelector("[data-member]").click();
+      await tick();
+      assert.equal(active(app.$), "archive");
+      assert.equal(app.$("archiveBack").hidden, true);
+      assert.equal(app.$("archiveBack").textContent, "");
+      assert.match(app.$("notice").textContent, /member read refused/);
+    }
+    refuse = false;
+    app.$("tableScroll").querySelector("[data-member]").click();
+    await tick();
+    assert.equal(active(app.$), "sections");
+    assert.equal(app.$("archiveBack").querySelectorAll("button").length, 1);
+    app.$("archiveBack").querySelector("button").click();
+    assert.equal(active(app.$), "archive");
+    assert.equal(app.$("archiveBack").hidden, true);
+  } finally { app.close(); }
+});
+
+test("empty ranged New inspection enables the file picker without requesting payload bytes", async () => {
+  const app = await mount(new Uint8Array(), { ranged: {} });
+  try {
+    assert.equal(app.$("openFile").hidden, false);
+    assert.equal(app.$("openFile").disabled, false);
+    assert.equal(app.$("filePicker").disabled, false);
+    assert.equal(app.rangeReads.length, 0);
+    chooseFile(app, selectedFile("example.o", object));
+    await tick();
+    assert.equal(active(app.$), "symbols");
+  } finally { app.close(); }
 });
