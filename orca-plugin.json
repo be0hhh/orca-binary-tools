@@ -13,7 +13,7 @@
   "license": "MIT",
   "repository": "https://github.com/be0hhh/orca-binary-tools",
   "engines": {
-    "orca": ">=1.4.245"
+    "orca": ">=1.4.250"
   },
   "contributes": {
     "syntaxes": [
@@ -64,7 +64,9 @@
         ],
         "entry": "editor/index.html",
         "priority": "default",
-        "contentKind": "bytes"
+        "contentKind": "bytes",
+        "documentAccess": "ranges",
+        "binaryFallback": true
       }
     ],
     "newFiles": [
