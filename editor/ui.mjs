@@ -1,11 +1,10 @@
 import { parseBinary, searchBytes, scanStrings } from "./binary-core.mjs";
-import { bytesSource, fileSource, rangeSource, pagedSource, subSource, MAX_FILE_BYTES } from "./byte-source.mjs";
 
 const $ = (id) => document.getElementById(id);
-const hasRangeSession = typeof window.orca?.document?.rangeSession === "function";
-const hasDocumentSession = hasRangeSession || typeof window.orca?.document?.session === "function";
-const BUFFER_LIMIT = 64 * 1024 * 1024;
-const TOO_LARGE = "This file exceeds the 1 GiB inspection limit. No data was truncated or opened.";
+const hasDocumentSession = typeof window.orca?.document?.session === "function";
+const LIMIT = 64 * 1024 * 1024;
+const TOO_LARGE =
+  "This file exceeds the 64 MiB inspection limit. No data was truncated or opened.";
 const PAGE_SIZE = 200;
 const naturalOrder = new Intl.Collator(undefined, { numeric: true });
 const ROW_BYTES = 16;
@@ -47,34 +46,6 @@ let stringsGeneration = 0;
 let searchController = null;
 let stringsController = null;
 let ui = freshUI();
-let loadController = null;
-let hexController = null;
-let inspectorController = null;
-let rangeSession = null;
-let bufferSession = null;
-let disposed = false;
-let rangeSubscription = null;
-let documentSource = null;
-let currentRoot = null;
-let invalidated = false;
-function viewFailure(error) {
-  if (error.code === "FILE_CHANGED") invalidateDocument();
-  else if (error.name !== "AbortError") notice(error.message, true);
-}
-function invalidateDocument() {
-  documentSource?.invalidate();
-  currentRoot?.invalidate?.();
-  loadGeneration++; loadController?.abort(); stopTasks();
-  hexController?.abort(); inspectorController?.abort();
-  parents = []; current = null; currentRoot = null; tableView = null; ui = freshUI();
-  invalidated = true; opening = false;
-  $("reloadFile").hidden = false;
-  $("tableScroll").innerHTML = ""; $("hexRows").innerHTML = ""; $("inspector").innerHTML = "";
-  $("matchCount").textContent = "";
-  $("archiveBack").innerHTML = ""; $("archiveBack").hidden = true;
-  $("fileSummary").textContent = ""; $("fileSummary").title = "";
-  render(); notice("File changed. Reload to inspect the new version.", true);
-}
 
 function freshUI() {
   return {
@@ -111,78 +82,111 @@ function stopTasks() {
   stringsGeneration++;
   $("statusTask").textContent = "";
 }
-async function loadSource(input, name = "", options = {}) {
-  const source = input?.read ? input : bytesSource(input);
-  if (source.byteLength > MAX_FILE_BYTES) { notice(TOO_LARGE, true); return false; }
-  const fallback = { current, parents, root: currentRoot, ui, tableView };
-  const generation = ++loadGeneration;
-  loadController?.abort(); loadController = new AbortController();
-  const signal = loadController.signal;
-  stopTasks(); hexController?.abort(); inspectorController?.abort();
-  opening = true;
+function makeCurrent(bytes, name) {
+  let parsed;
+  try {
+    parsed = parseBinary(bytes);
+  } catch (error) {
+    parsed = {
+      format: "RAW",
+      architecture: "Unknown",
+      bits: null,
+      endian: null,
+      fileSize: bytes.length,
+      memorySize: null,
+      sections: [],
+      symbols: [],
+      members: [],
+      warnings: [`Could not parse structure: ${error.message}`],
+    };
+  }
+  return { bytes, name, parsed };
+}
+function loadBytes(input, name = "", options = {}) {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  if (bytes.byteLength > LIMIT) {
+    notice(TOO_LARGE, true);
+    return false;
+  }
+  loadGeneration++;
+  stopTasks();
+  opening = false;
   let previous = options.preserveView && current && !parents.length && !current.name ? ui : null;
   const tableScroll = previous ? $("tableScroll").scrollTop : 0;
-  if (!options.keepParents) {
-    parents = [];
-    currentRoot = source;
-  }
-  current = null; tableView = null;
-  $("statusTask").textContent = "Opening binary…";
+  if (!options.keepParents) parents = [];
+  current = makeCurrent(bytes, name);
+  if (previous && !allowedSections().includes(previous.pane)) previous = null;
+  tableView = null;
+  ui = previous
+    ? {
+        ...previous,
+        matches: [],
+        matchIndex: -1,
+        matchLength: 0,
+        strings: null,
+        stringsNext: null,
+        stringsCursors: [0],
+        stringsQuery: null,
+        stringsLoading: false,
+      }
+    : freshUI();
+  ui.offset = Math.min(ui.offset, Math.max(0, bytes.length - 1));
+  if (previous && ui.pane === "strings") ui.page = 0;
+  const p = current.parsed;
+  if (!previous) ui.pane =
+    p.format === "AR" && p.members.length
+      ? "archive"
+      : ["ELF", "PE", "COFF"].includes(p.format) && p.symbols.length
+        ? "symbols"
+        : ["ELF", "PE", "COFF"].includes(p.format) && p.sections.length
+          ? "sections"
+          : "hex";
+  $("tableFilter").value = ui.filter;
+  $("symbolKind").value = ui.kind;
+  $("byteSearch").value = ui.query;
+  $("searchMode").value = ui.searchMode;
+  $("offsetInput").value = "";
+  $("hexViewport").scrollTop = previous ? ui.scroll : 0;
+  notice(current.parsed.warnings.join(" · "));
   render();
-  try {
-    const parsed = await parseBinary(source, { signal });
-    if (signal.aborted || generation !== loadGeneration) return false;
-    if (!options.keepParents && fallback.root && fallback.root !== source && fallback.root !== documentSource) fallback.root.invalidate?.();
-    opening = false; invalidated = false; $("reloadFile").hidden = true;
-    if (options.parent) parents = [...parents, options.parent];
-    current = { source, name, parsed };
-    if (previous && !allowedSections().includes(previous.pane)) previous = null;
-    ui = previous ? {
-      ...previous, matches: [], matchIndex: -1, matchLength: 0, strings: null,
-      stringsNext: null, stringsCursors: [0], stringsQuery: null, stringsLoading: false,
-    } : freshUI();
-    ui.offset = Math.min(ui.offset, Math.max(0, source.byteLength - 1));
-    if (previous && ui.pane === "strings") ui.page = 0;
-    if (!previous) ui.pane = parsed.format === "AR" && parsed.members.length ? "archive"
-      : ["ELF", "PE", "COFF"].includes(parsed.format) && parsed.symbols.length ? "symbols"
-      : ["ELF", "PE", "COFF"].includes(parsed.format) && parsed.sections.length ? "sections" : "hex";
-    $("tableFilter").value = ui.filter; $("symbolKind").value = ui.kind;
-    $("byteSearch").value = ui.query; $("searchMode").value = ui.searchMode;
-    $("offsetInput").value = ""; $("hexViewport").scrollTop = previous ? ui.scroll : 0;
-    $("statusTask").textContent = ""; notice(parsed.warnings.join(" · "));
-    render(); $("tableScroll").scrollTop = previous ? tableScroll : 0;
-    if (ui.pane === "strings") void analyzeStrings();
-    return true;
-  } catch (error) {
-    if (signal.aborted || generation !== loadGeneration) return false;
-    opening = false; $("statusTask").textContent = "";
-    if (error.code === "FILE_CHANGED") viewFailure(error);
-    else {
-      current = fallback.current; parents = fallback.parents; currentRoot = fallback.root; ui = fallback.ui; tableView = fallback.tableView;
-      if (error.name !== "AbortError") notice(`${name ? `Could not open ${name}: ` : ""}${error.message}`, true);
-    }
-    render(); return false;
-  }
+  $("tableScroll").scrollTop = previous ? tableScroll : 0;
+  if (ui.pane === "strings") void analyzeStrings();
+  return true;
 }
 async function displayBytes(input, name = "", options = {}) {
-  if (input.byteLength > BUFFER_LIMIT) {
-    loadGeneration++; loadController?.abort(); stopTasks(); opening = false;
-    notice("This document exceeds the 64 MiB full-buffer bridge limit. Use Open file or a range-capable host.", true);
-    renderEmptyState(); renderMetadata(); return false;
+  const generation = ++loadGeneration;
+  opening = true;
+  if (input.byteLength >= 1024 * 1024 && input.byteLength <= LIMIT) {
+    stopTasks();
+    $("statusTask").textContent = "Opening binary…";
+    renderEmptyState();
+    renderMetadata();
+    await new Promise((resolve) => {
+      const fallback = setTimeout(resolve, typeof requestAnimationFrame === "function" ? 100 : 0);
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => {
+        setTimeout(() => { clearTimeout(fallback); resolve(); }, 0);
+      });
+    });
+    if (generation !== loadGeneration) return;
   }
-  return loadSource(pagedSource(bytesSource(input)), name, options);
+  if (!loadBytes(input, name, options)) {
+    opening = false;
+    $("statusTask").textContent = "";
+    renderEmptyState();
+    renderMetadata();
+  }
 }
 function renderEmptyState() {
-  $("emptyState").hidden = !hasDocumentSession || !!current?.source.byteLength;
-  $("emptyHint").textContent = opening ? "Opening binary…" : invalidated ? "File changed. Use Reload to continue." : "Choose a binary file to inspect.";
-  $("openFile").hidden = !hasDocumentSession || opening || !!current?.source.byteLength;
+  $("emptyState").hidden = !hasDocumentSession || !!current?.bytes.length;
+  $("emptyHint").textContent = opening ? "Opening binary…" : "Choose a binary file to inspect.";
+  $("openFile").hidden = !hasDocumentSession || opening || !!current?.bytes.length;
 }
 function render() {
   renderNavigation();
   renderMetadata();
   renderEmptyState();
   for (const id of ["pane-table", "pane-hex"]) $(id).hidden = true;
-  if (!current?.source.byteLength) return;
+  if (!current?.bytes.length) return;
   if (ui.pane === "hex") {
     $("pane-hex").hidden = false;
     renderHex();
@@ -193,8 +197,8 @@ function render() {
   }
 }
 function renderMetadata() {
-  $("metadata").hidden = !hasDocumentSession && !current?.source.byteLength;
-  $("fileSummary").hidden = !current?.source.byteLength && !current?.name;
+  $("metadata").hidden = !hasDocumentSession && !current?.bytes.length;
+  $("fileSummary").hidden = !current?.bytes.length && !current?.name;
   if (!current) return;
   const p = current.parsed;
   const info = [
@@ -221,7 +225,7 @@ function renderMetadata() {
   $("archiveBack").hidden = !parents.length;
 }
 function allowedSections() {
-  if (!current?.source.byteLength) return [];
+  if (!current?.bytes.length) return [];
   const p = current.parsed;
   return SECTIONS.filter((key) =>
     key === "sections"
@@ -253,7 +257,6 @@ function renderNavigation() {
 function switchPane(pane) {
   if (!allowedSections().includes(pane)) return;
   if (ui.pane === "hex") {
-    if (pane !== "hex") { hexController?.abort(); inspectorController?.abort(); }
     ui.scroll = $("hexViewport").scrollTop;
     if (pane !== "hex") {
       searchController?.abort();
@@ -466,7 +469,7 @@ function hexGeometry() {
   // Use the same computed line height as the painted rows, including CSS overrides.
   const rowHeight = parseFloat(getComputedStyle($("hexViewport")).lineHeight) || 19;
   const totalHeight =
-    Math.ceil((current?.source.byteLength || 0) / ROW_BYTES) * rowHeight;
+    Math.ceil((current?.bytes.length || 0) / ROW_BYTES) * rowHeight;
   // Chromium caps layout heights. Compress the scrollbar while retaining real row pixels.
   const height = Math.min(totalHeight, 8_000_000);
   const viewportHeight = $("hexViewport").clientHeight;
@@ -476,13 +479,11 @@ function hexGeometry() {
   );
   return { height, scale, rowHeight };
 }
-async function renderHex() {
-  if (!current || ui.pane !== "hex") return;
-  hexController?.abort(); hexController = new AbortController();
-  const signal = hexController.signal, selected = current, generation = loadGeneration;
-  const source = selected.source,
+function renderHex() {
+  if (!current) return;
+  const bytes = current.bytes,
     viewport = $("hexViewport");
-  const total = Math.ceil(source.byteLength / ROW_BYTES);
+  const total = Math.ceil(bytes.length / ROW_BYTES);
   const geometry = hexGeometry();
   const rowHeight = geometry.rowHeight;
   const logicalScroll = viewport.scrollTop * geometry.scale;
@@ -494,10 +495,6 @@ async function renderHex() {
   $("hexSpacer").style.height = `${geometry.height}px`;
   $("hexRows").style.top =
     `${viewport.scrollTop + start * rowHeight - logicalScroll}px`;
-  let bytes;
-  try { bytes = await source.read(start * ROW_BYTES, Math.min(source.byteLength - start * ROW_BYTES, (end - start) * ROW_BYTES), { signal }); }
-  catch (error) { if (!signal.aborted && generation === loadGeneration) viewFailure(error); return; }
-  if (signal.aborted || generation !== loadGeneration || current !== selected || ui.pane !== "hex") return;
   let html = "";
   for (let row = start; row < end; row++) {
     const base = row * ROW_BYTES;
@@ -505,8 +502,8 @@ async function renderHex() {
       asciiHtml = "";
     for (let index = 0; index < ROW_BYTES; index++) {
       const offset = base + index,
-        b = bytes[offset - start * ROW_BYTES];
-      if (offset >= source.byteLength) {
+        b = bytes[offset];
+      if (offset >= bytes.length) {
         byteHtml += '<span class="hex-byte">&nbsp;</span>';
         continue;
       }
@@ -530,22 +527,19 @@ async function renderHex() {
 function inspectorRow(label, value) {
   return `<div class="inspector-row"><span>${label}</span><span>${esc(value)}</span></div>`;
 }
-async function renderInspector() {
-  if (!current?.source.byteLength || !ui.inspector) return;
-  inspectorController?.abort(); inspectorController = new AbortController();
-  const signal = inspectorController.signal, selected = current, offset = ui.offset, generation = loadGeneration;
-  let data;
-  try { data = await selected.source.read(offset, Math.min(8, selected.source.byteLength - offset), { signal }); }
-  catch (error) { if (!signal.aborted && generation === loadGeneration) viewFailure(error); return; }
-  if (signal.aborted || current !== selected || offset !== ui.offset || generation !== loadGeneration || ui.pane !== "hex") return;
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength), b = data[0];
-  let html = `<h2>Data inspector</h2><div class="muted mono">${hex(offset)}</div><h3>8-bit</h3>${inspectorRow("Hex", b.toString(16).toUpperCase().padStart(2, "0"))}${inspectorRow("Binary", b.toString(2).padStart(8, "0"))}${inspectorRow("Unsigned", b)}${inspectorRow("Signed", view.getInt8(0))}${inspectorRow("ASCII", b >= 32 && b <= 126 ? String.fromCharCode(b) : "—")}`;
+function renderInspector() {
+  if (!current?.bytes.length) return;
+  const data = current.bytes,
+    offset = ui.offset,
+    view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const b = data[offset];
+  let html = `<h2>Data inspector</h2><div class="muted mono">${hex(offset)}</div><h3>8-bit</h3>${inspectorRow("Hex", b.toString(16).toUpperCase().padStart(2, "0"))}${inspectorRow("Binary", b.toString(2).padStart(8, "0"))}${inspectorRow("Unsigned", b)}${inspectorRow("Signed", view.getInt8(offset))}${inspectorRow("ASCII", b >= 32 && b <= 126 ? String.fromCharCode(b) : "—")}`;
   for (const [bits, suffix] of [
     [16, "Int16"],
     [32, "Int32"],
     [64, "BigInt64"],
   ]) {
-    const enough = bits / 8 <= data.length;
+    const enough = offset + bits / 8 <= data.length;
     const unsigned = suffix.replace("Int", "Uint");
     html += `<h3>${bits}-bit integers</h3>`;
     for (const [label, little] of [
@@ -554,11 +548,11 @@ async function renderInspector() {
     ]) {
       html += inspectorRow(
         `Unsigned ${label}`,
-        enough ? view[`get${unsigned}`](0, little).toString() : "—",
+        enough ? view[`get${unsigned}`](offset, little).toString() : "—",
       );
       html += inspectorRow(
         `Signed ${label}`,
-        enough ? view[`get${suffix}`](0, little).toString() : "—",
+        enough ? view[`get${suffix}`](offset, little).toString() : "—",
       );
     }
   }
@@ -570,8 +564,8 @@ async function renderInspector() {
     ])
       html += inspectorRow(
         `Float${bits} ${label}`,
-        bits / 8 <= data.length
-          ? String(view[`getFloat${bits}`](0, little))
+        offset + bits / 8 <= data.length
+          ? String(view[`getFloat${bits}`](offset, little))
           : "—",
       );
   $("inspector").innerHTML = html;
@@ -581,7 +575,7 @@ function jump(offset, length = 0) {
     !current ||
     !Number.isSafeInteger(offset) ||
     offset < 0 ||
-    offset >= current.source.byteLength
+    offset >= current.bytes.length
   ) {
     notice("This location has no bytes in the current file.", true);
     return;
@@ -607,10 +601,9 @@ function jump(offset, length = 0) {
   renderHex();
   renderInspector();
 }
-async function inspectMember(index) {
+function inspectMember(index) {
   const member = current?.parsed.members[index];
   if (!member) return;
-  if (parents.length >= 8) { notice("Archive nesting exceeds eight levels; hex remains available.", true); return; }
   const snapshot = {
     current,
     ui: {
@@ -620,10 +613,16 @@ async function inspectMember(index) {
     },
     notice: $("notice").textContent,
   };
-  await loadSource(subSource(current.source, member.offset, member.size), member.name, { keepParents: true, parent: snapshot });
+  parents.push(snapshot);
+  loadBytes(
+    member.bytes ??
+      current.bytes.subarray(member.offset, member.offset + member.size),
+    member.name,
+    { keepParents: true },
+  );
 }
 function returnParent(index) {
-  loadGeneration++; loadController?.abort(); hexController?.abort(); inspectorController?.abort();
+  loadGeneration++;
   const target = parents[index];
   if (!target) return;
   stopTasks();
@@ -666,7 +665,7 @@ async function runSearch() {
   notice(current.parsed.warnings.join(" · "));
   $("statusTask").textContent = "Searching…";
   try {
-    const matches = await searchBytes(current.source, query, {
+    const matches = await searchBytes(current.bytes, query, {
       mode,
       signal,
       maxMatches: 100000,
@@ -685,7 +684,7 @@ async function runSearch() {
     else renderHex();
   } catch (error) {
     if (!signal.aborted && generation === searchGeneration) {
-      viewFailure(error);
+      notice(error.message, true);
       $("statusTask").textContent = "";
       renderHex();
     }
@@ -704,7 +703,7 @@ async function analyzeStrings() {
   $("statusTask").textContent = "Scanning UTF-8 strings…";
   if (ui.pane === "strings") renderTable();
   try {
-    const result = await scanStrings(current.source, {
+    const result = await scanStrings(current.bytes, {
       startOffset: cursor,
       query,
       minLength: 4,
@@ -722,29 +721,26 @@ async function analyzeStrings() {
   } catch (error) {
     if (!signal.aborted && generation === stringsGeneration) {
       ui.stringsLoading = false;
-      viewFailure(error);
+      notice(error.message, true);
       $("statusTask").textContent = "";
     }
   }
 }
 async function openSelectedFile(file) {
   if (!file) return;
-  if (file.size > MAX_FILE_BYTES) { notice(TOO_LARGE, true); return; }
-  try { await loadSource(pagedSource(fileSource(file)), file.name); }
-  catch (error) { viewFailure(error); }
-}
-$("reloadFile").addEventListener("click", async () => {
-  if (!rangeSession) return;
   const generation = ++loadGeneration;
-  $("reloadFile").disabled = true;
+  if (file.size > LIMIT) {
+    notice(TOO_LARGE, true);
+    return;
+  }
   try {
-    const descriptor = await rangeSession.reload();
-    if (generation !== loadGeneration) return;
-    documentSource = pagedSource(rangeSource(rangeSession, descriptor));
-    await loadSource(documentSource);
-  } catch (error) { if (generation === loadGeneration) viewFailure(error); }
-  finally { $("reloadFile").disabled = false; }
-});
+    const bytes = await file.arrayBuffer();
+    if (generation === loadGeneration) await displayBytes(bytes, file.name);
+  } catch (error) {
+    if (generation === loadGeneration)
+      notice(`Could not open ${file.name}: ${error.message}`, true);
+  }
+}
 $("openFile").addEventListener("click", () => $("filePicker").click());
 $("filePicker").addEventListener("change", (event) => {
   const file = event.target.files?.[0];
@@ -826,22 +822,20 @@ $("hexViewport").addEventListener("keydown", (event) => {
   const delta = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -16, ArrowDown: 16 }[
     event.key
   ];
-  if ((event.key === "Home" || event.key === "End") && current?.source.byteLength) {
+  if ((event.key === "Home" || event.key === "End") && current?.bytes.length) {
     event.preventDefault();
     const rowStart = Math.floor(ui.offset / ROW_BYTES) * ROW_BYTES;
     jump(event.key === "Home"
       ? (event.ctrlKey || event.metaKey ? 0 : rowStart)
-      : (event.ctrlKey || event.metaKey ? current.source.byteLength - 1 : Math.min(current.source.byteLength - 1, rowStart + ROW_BYTES - 1)));
-  } else if (delta != null && current?.source.byteLength) {
+      : (event.ctrlKey || event.metaKey ? current.bytes.length - 1 : Math.min(current.bytes.length - 1, rowStart + ROW_BYTES - 1)));
+  } else if (delta != null && current?.bytes.length) {
     event.preventDefault();
-    jump(Math.max(0, Math.min(current.source.byteLength - 1, ui.offset + delta)));
+    jump(Math.max(0, Math.min(current.bytes.length - 1, ui.offset + delta)));
   }
 });
 $("toggleInspector").addEventListener("click", () => {
   ui.inspector = !ui.inspector;
-  if (!ui.inspector) inspectorController?.abort();
   renderHex();
-  if (ui.inspector) renderInspector();
 });
 $("byteSearch").addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
@@ -877,30 +871,14 @@ new ResizeObserver(() => {
   if (ui.pane === "hex") renderHex();
 }).observe($("hexViewport"));
 window.addEventListener("pagehide", () => {
-  disposed = true;
-  loadGeneration++; loadController?.abort();
-  stopTasks(); hexController?.abort(); inspectorController?.abort();
-  documentSource?.invalidate(); currentRoot?.invalidate?.();
-  rangeSubscription?.dispose(); rangeSession?.dispose(); bufferSession?.dispose?.();
+  loadGeneration++;
+  stopTasks();
 });
 document.fonts?.ready.then(() => {
-  if (ui.pane === "hex" && current?.source.byteLength) jump(ui.offset);
+  if (ui.pane === "hex" && current?.bytes.length) jump(ui.offset);
 });
 render();
-if (hasRangeSession) {
-  window.orca.document.rangeSession().then(async (session) => {
-    if (disposed) { session.dispose(); return; }
-    rangeSession = session;
-    documentSource = pagedSource(rangeSource(session));
-    rangeSubscription = session.onInvalidate(() => invalidateDocument());
-    await loadSource(documentSource);
-    if (disposed) return;
-    $("openFile").disabled = false; $("filePicker").disabled = false;
-  }).catch((error) => {
-    if (disposed) return;
-    opening = false; notice(`Could not load the Orca document: ${error.message}.`, true); renderEmptyState();
-  });
-} else if (hasDocumentSession) {
+if (hasDocumentSession) {
   const normalize = (event) => {
     if (event?.bytes instanceof ArrayBuffer) return { bytes: event.bytes };
     if (ArrayBuffer.isView(event?.bytes))
@@ -918,10 +896,7 @@ if (hasRangeSession) {
       encode: (value) => ({ kind: "bytes", bytes: value.bytes }),
     })
     .then((session) => {
-      if (disposed) { session.dispose?.(); return; }
-      bufferSession = session;
       const replace = (value) => {
-        if (disposed) return;
         if (value?.bytes) {
           void displayBytes(value.bytes, "", { preserveView: true });
         } else if (value?.error === "invalid-bytes") {
@@ -939,7 +914,6 @@ if (hasRangeSession) {
       $("filePicker").disabled = false;
     })
     .catch((error) => {
-      if (disposed) return;
       opening = false;
       notice(`Could not load the Orca document: ${error.message}.`, true);
       renderEmptyState();

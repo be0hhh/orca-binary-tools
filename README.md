@@ -4,23 +4,21 @@ Binary inspection and Assembly highlighting for Orca, using the current Orca the
 
 ![Binary Inspector overview](assets/cover.jpg)
 
-**Development preview:** this branch adds ranged inspection for the upcoming Orca **1.4.250** host API. Released Orca versions through 1.4.249 do not support this branch's `documentAccess: "ranges"` manifest. The preview opts into both `documentAccess: "ranges"` and `binaryFallback: true`: Orca-classified binary files automatically use this inspector, including files without a registered extension. No release of this branch is published.
-
 Binary files open directly inside Orca's editor tabs. No website, local server, or external application is required.
 
 ## Install
 
-In **Settings → Plugins → Add plugin**, choose **From a Git URL…** and enter `https://github.com/be0hhh/orca-binary-tools#v1.1.2`, or choose **From a folder…** for a downloaded and extracted release. Confirm the installation and enable the plugin.
+In **Settings → Plugins → Add plugin**, choose **From a Git URL…** and enter `https://github.com/be0hhh/orca-binary-tools#v1.1.4`, or choose **From a folder…** for a downloaded and extracted release. Confirm the installation and enable the plugin.
 
-The URL above selects the published stable version. The range-enabled development branch requires the upcoming host identified above. Use a normal installation for everyday inspection. **Development folders** enable live reload while editing plugin files; watcher retries can also reload an open inspector. Remove this plugin's development-folder entries before switching to a normal installation.
+Use a normal installation for everyday inspection. **Development folders** enable live reload while editing plugin files; watcher retries can also reload an open inspector. Remove this plugin's development-folder entries before switching to a normal installation.
 
 ## Open an inspection
 
-Choose **New binary inspection** from the tab bar **+** menu, the command palette, or the plugin's **Create** action. Open any file Orca classifies as binary through its file editor, or use the single **Open file** action in an empty inspection to choose a file with any name or extension. A file opened from Orca loads automatically; there is no Analyze or Load step.
+Choose **New binary inspection** from the tab bar **+** menu, the command palette, or the plugin's **Create** action. Open an existing supported binary through Orca’s file editor, or use the single **Open file** action in an empty inspection to choose a file with any name or extension. A file opened from Orca loads automatically; there is no Analyze or Load step.
 
-This development branch requires Orca **1.4.250 or newer**, which introduces the ranged document API. The published stable plugin remains available for current hosts. Extensionless files, unknown extensions and versioned libraries such as `libexample.so.1` can be selected with **Open file**.
+The plugin works with Orca **1.4.245 or newer**, without changes to Orca itself. Extensionless files, unknown extensions and versioned libraries such as `libexample.so.1` can be selected with **Open file**.
 
-A file selected through **Open file** is read through bounded `File.slice()` requests; its name appears beside the format. Selection does not change or save the document behind the Orca tab, and rebuilding the selected file does not refresh the selected file automatically. Open another empty inspection to select it again. A later replacement of the tab's own document returns the inspector to that document. The picker selects files available on the client machine (including accessible Windows/WSL shares), rather than browsing an SSH host.
+A file selected through **Open file** is a read-only snapshot; its name appears beside the format. Selection does not change or save the document behind the Orca tab, and rebuilding the selected file does not refresh that snapshot automatically. Open another empty inspection to select it again. A later replacement of the tab's own document returns the inspector to that document. The picker selects files available on the client machine (including accessible Windows/WSL shares), rather than browsing an SSH host.
 
 The syntax contribution's **Try** action in Orca creates an empty source file. For filled source examples use **New Intel assembly example**, **New AT&T assembly example**, or **New ARM assembly example**. These templates open in the normal Orca text editor.
 
@@ -35,9 +33,7 @@ The syntax contribution's **Try** action in Orca creates an empty source file. F
 
 Supported structural analysis: ELF32/ELF64, little/big endian, ELF symbol tables and load headers; PE32/PE32+ sections/imports/exports; ordinary COFF objects; GNU/BSD AR archives. Mach-O and unknown formats remain available as hex and strings. Thin archives cannot inspect external members. Unsupported metadata variants produce a notice while preserving the byte view.
 
-File sizes are limited to **1 GiB inclusive** for ranged host documents and the file picker. The inspector reads only bounded portions of the input: metadata and visible hex pages use a 4 MiB LRU cache of 64 KiB pages, with at most two host reads in flight; sequential search and string extraction use 256 KiB chunks without retaining the file. Archive members share the same source by offset and size, with an eight-level inspection limit. No full-file hash or 1 GiB buffer is created.
-
-When the host invalidates a document version, all pending work, metadata, results and archive breadcrumbs are cleared. **Reload** explicitly opens the new version; the inspector never combines versions or retries automatically. The legacy full-buffer adapter remains available for compatible hosts and tests with its existing **64 MiB** bridge limit. Inputs beyond their mode's limit are rejected before payload reads, without truncation.
+File sizes are limited to **64 MiB**, matching Orca's document bridge limit. Larger documents are rejected rather than silently truncated. Search and string extraction yield between chunks and cancel when the inspected document changes.
 
 Memory sizes describe headers and sections, **not process RAM usage**. Relocatable object files and archives have no declared loaded image size. Missing symbol sizes are shown as **—**, not estimated from neighboring addresses; zero-filled sections have no file bytes to jump to. Stripped files can have no symbols. PE imports/exports often provide names without sizes. Raw section and symbol values remain distinguishable from mapped file offsets.
 
@@ -64,7 +60,7 @@ npm ci --ignore-scripts
 npm test
 ```
 
-The suite also covers page/chunk boundaries, sparse 1 GiB inputs, EOF, archive subranges, stale versions, cancellation and bounded cache/concurrency. The parser/search suite is accompanied by DOM tests that execute the actual UI module with a mocked Orca document session. They check default panes, empty state, archive/member/back state, document replacement, search and the absence of duplicate application chrome. Native acceptance also checks both Orca theme modes, narrow panels and keyboard navigation.
+The parser/search suite is accompanied by DOM tests that execute the actual UI module with a mocked Orca document session. They check default panes, empty state, archive/member/back state, document replacement, search and the absence of duplicate application chrome. Native acceptance also checks both Orca theme modes, narrow panels and keyboard navigation.
 
 ## License
 
