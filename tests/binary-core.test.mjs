@@ -5,7 +5,6 @@ import {
   parseBinary,
   searchBytes,
   extractStrings,
-  scanStrings,
 } from "../editor/binary-core.mjs";
 const enc = new TextEncoder();
 function fixture(length, le = true) {
@@ -65,10 +64,10 @@ function elf(wide, le) {
   }
   return b;
 }
-test("ELF32/64 LE/BE sections, BSS, and zero symbol size", async () => {
+test("ELF32/64 LE/BE sections, BSS, and zero symbol size", () => {
   for (const wide of [false, true])
     for (const le of [false, true]) {
-      const m = (await parseBinary(elf(wide, le)));
+      const m = parseBinary(elf(wide, le));
       assert.equal(m.format, "ELF");
       assert.deepEqual(m.warnings, []);
       assert.equal(m.endian, le ? "LE" : "BE");
@@ -85,7 +84,7 @@ test("ELF32/64 LE/BE sections, BSS, and zero symbol size", async () => {
       assert.equal(m.memorySize, null);
     }
 });
-test("ELF PT_LOAD memory includes zero initialized region", async () => {
+test("ELF PT_LOAD memory includes zero initialized region", () => {
   const b = elf(true, true),
     v = new DataView(b.buffer);
   v.setUint16(16, 2, true);
@@ -94,17 +93,17 @@ test("ELF PT_LOAD memory includes zero initialized region", async () => {
   v.setUint16(56, 1, true);
   v.setUint32(64, 1, true);
   v.setBigUint64(104, 4096n, true);
-  assert.equal((await parseBinary(b)).memorySize, 4096);
+  assert.equal(parseBinary(b).memorySize, 4096);
 });
-test("truncated and corrupt ELF are warnings, not throws", async () => {
+test("truncated and corrupt ELF are warnings, not throws", () => {
   const b = elf(true, true);
   for (let n = 4; n < b.length; n++) {
-    const m = (await parseBinary(b.subarray(0, n)));
+    const m = parseBinary(b.subarray(0, n));
     assert.equal(m.fileSize, n);
   }
   const v = new DataView(b.buffer);
   v.setUint16(58, 1, true);
-  assert.ok((await parseBinary(b)).warnings.length);
+  assert.ok(parseBinary(b).warnings.length);
 });
 function arMember(name, bytes, size = bytes.length) {
   const header =
@@ -131,7 +130,7 @@ function join(...parts) {
   }
   return b;
 }
-test("AR GNU/BSD long names and service members preserve payload offsets", async () => {
+test("AR GNU/BSD long names and service members preserve payload offsets", () => {
   const b = join(
     enc.encode("!<arch>\n"),
     arMember("/", new Uint8Array(4)),
@@ -139,23 +138,22 @@ test("AR GNU/BSD long names and service members preserve payload offsets", async
     arMember("/0", Uint8Array.of(1, 2)),
     arMember("#1/10", join(enc.encode("bsd_name.o"), Uint8Array.of(3, 4))),
   );
-  const m = (await parseBinary(b));
+  const m = parseBinary(b);
   assert.deepEqual(m.warnings, []);
   assert.equal(m.members[0].service, true);
   assert.equal(m.members[1].service, true);
   assert.equal(m.members[2].name, "a_long_name.o");
   assert.equal(m.members[3].name, "bsd_name.o");
-  assert.equal(m.members[3].size, 2);
-  assert.equal("bytes" in m.members[3], false);
+  assert.deepEqual([...m.members[3].bytes], [3, 4]);
   assert.equal(b[m.members[3].offset], 3);
 });
-test("negative/truncated/bad AR headers return warnings without looping", async () => {
+test("negative/truncated/bad AR headers return warnings without looping", () => {
   for (const b of [
     join(enc.encode("!<arch>\n"), arMember("bad", new Uint8Array(), -60)),
     join(enc.encode("!<arch>\n"), arMember("bad", new Uint8Array(), 100)),
     enc.encode("!<arch>\nshort"),
   ]) {
-    const m = (await parseBinary(b));
+    const m = parseBinary(b);
     assert.equal(m.format, "AR");
     assert.ok(m.warnings.length);
   }
@@ -185,8 +183,8 @@ function coff() {
   text(122, "long_symbol\0");
   return f.b;
 }
-test("ordinary COFF skips aux records, resolves string names, keeps unknown sizes null", async () => {
-  const m = (await parseBinary(coff()));
+test("ordinary COFF skips aux records, resolves string names, keeps unknown sizes null", () => {
+  const m = parseBinary(coff());
   assert.deepEqual(m.warnings, []);
   assert.equal(m.format, "COFF");
   assert.equal(m.symbols.length, 2);
@@ -249,9 +247,9 @@ function pe(wide) {
   text(1186, "imported\0");
   return b;
 }
-test("PE32/PE32+ exports/imports with virtual addresses and unknown sizes", async () => {
+test("PE32/PE32+ exports/imports with virtual addresses and unknown sizes", () => {
   for (const wide of [false, true]) {
-    const m = (await parseBinary(pe(wide)));
+    const m = parseBinary(pe(wide));
     assert.deepEqual(m.warnings, []);
     assert.equal(m.format, "PE");
     assert.equal(m.bits, wide ? 64 : 32);
@@ -268,23 +266,23 @@ test("PE32/PE32+ exports/imports with virtual addresses and unknown sizes", asyn
     assert.equal(m.symbols.find((s) => s.kind === "import").size, null);
   }
 });
-test("corrupt PE/COFF never throw", async () => {
+test("corrupt PE/COFF never throw", () => {
   for (const original of [pe(true), coff()])
     for (let n = 0; n < original.length; n += 7) {
-      await assert.doesNotReject(async () => (await parseBinary(original.subarray(0, n))));
+      assert.doesNotThrow(() => parseBinary(original.subarray(0, n)));
     }
 });
-test("Mach-O detected as unsupported, arbitrary bytes stay raw", async () => {
+test("Mach-O detected as unsupported, arbitrary bytes stay raw", () => {
   assert.equal(
-    (await parseBinary(Uint8Array.of(0xcf, 0xfa, 0xed, 0xfe))).format,
+    parseBinary(Uint8Array.of(0xcf, 0xfa, 0xed, 0xfe)).format,
     "Mach-O",
   );
-  assert.equal((await parseBinary(Uint8Array.of(1, 2, 3, 4))).format, "RAW");
+  assert.equal(parseBinary(Uint8Array.of(1, 2, 3, 4)).format, "RAW");
 });
 test("supplied object/archive parse without warnings", async () => {
   for (const name of ["sample.o", "sample.a"]) {
     const b = await readFile(new URL(`../samples/${name}`, import.meta.url));
-    assert.deepEqual((await parseBinary(b)).warnings, []);
+    assert.deepEqual(parseBinary(b).warnings, []);
   }
 });
 test("search contiguous and spaced hex, explicit text, overlaps and invalid input", async () => {
@@ -342,7 +340,7 @@ test("analysis supports abort and yields to event loop", async () => {
   });
 });
 
-test("ELF symbol offsets follow relocatable values versus executable addresses", async () => {
+test("ELF symbol offsets follow relocatable values versus executable addresses", () => {
   for (const wide of [false, true]) {
     const b = elf(wide, true),
       v = new DataView(b.buffer),
@@ -357,14 +355,14 @@ test("ELF symbol offsets follow relocatable values versus executable addresses",
       v.setUint32(p + 20, 16, true);
       v.setUint32(452, 4, true);
     }
-    assert.equal((await parseBinary(b)).symbols[0].offset, 484);
+    assert.equal(parseBinary(b).symbols[0].offset, 484);
     v.setUint16(16, 2, true);
     if (wide) v.setBigUint64(456, 0x1004n, true);
     else v.setUint32(452, 0x1004, true);
-    assert.equal((await parseBinary(b)).symbols[0].offset, 484);
+    assert.equal(parseBinary(b).symbols[0].offset, 484);
   }
 });
-test("overlapping ELF PT_LOAD virtual ranges count once", async () => {
+test("overlapping ELF PT_LOAD virtual ranges count once", () => {
   const b = elf(true, true),
     v = new DataView(b.buffer);
   v.setUint16(16, 2, true);
@@ -377,10 +375,10 @@ test("overlapping ELF PT_LOAD virtual ranges count once", async () => {
   v.setUint32(120, 1, true);
   v.setBigUint64(136, 6144n, true);
   v.setBigUint64(160, 4096n, true);
-  assert.equal((await parseBinary(b)).memorySize, 6144);
+  assert.equal(parseBinary(b).memorySize, 6144);
 });
 
-test("repeated ELF symbol tables respect a global expanded text budget", async () => {
+test("repeated ELF symbol tables respect a global expanded text budget", () => {
   const f = fixture(65536),
     { b, u16, u32, u64, text } = f;
   text(0, "\x7fELF");
@@ -403,22 +401,22 @@ test("repeated ELF symbol tables respect a global expanded text budget", async (
     u64(p + 56, 24);
   }
   for (let i = 0; i < 256; i++) u32(8192 + i * 24, 1);
-  const m = (await parseBinary(b));
+  const m = parseBinary(b);
   assert.equal(m.fileSize, 65536);
   assert.ok(m.warnings.some((s) => /Analysis limited/.test(s)));
   assert.ok(m.symbols.length < 2000);
 });
-test("overlong metadata names stop analysis explicitly", async () => {
+test("overlong metadata names stop analysis explicitly", () => {
   const b = elf(true, true),
     big = new Uint8Array(10000);
   big.set(b);
   const v = new DataView(big.buffer);
   big.fill(65, 400, 9000);
   v.setBigUint64(128 + 64 + 32, 8600n, true);
-  const m = (await parseBinary(big));
+  const m = parseBinary(big);
   assert.ok(m.warnings.some((s) => /individual name/.test(s)));
 });
-test("invalid PT_LOAD file range and memory mismatch produce warnings", async () => {
+test("invalid PT_LOAD file range and memory mismatch produce warnings", () => {
   const b = elf(true, true),
     v = new DataView(b.buffer);
   v.setUint16(16, 2, true);
@@ -429,12 +427,12 @@ test("invalid PT_LOAD file range and memory mismatch produce warnings", async ()
   v.setBigUint64(72, 500n, true);
   v.setBigUint64(96, 64n, true);
   v.setBigUint64(104, 32n, true);
-  const m = (await parseBinary(b));
+  const m = parseBinary(b);
   assert.ok(m.warnings.some((s) => /file range/.test(s)));
   assert.ok(m.warnings.some((s) => /exceeds memory/.test(s)));
 });
 
-test("global record budget stops aliased symbol tables with short names", async () => {
+test("global record budget stops aliased symbol tables with short names", () => {
   const f = fixture(70000),
     { b, u16, u32, u64, text } = f;
   text(0, "\x7fELF");
@@ -456,7 +454,7 @@ test("global record budget stops aliased symbol tables with short names", async 
     u64(p + 56, 24);
   }
   for (let i = 0; i < 2048; i++) u32(8192 + i * 24, 1);
-  const m = (await parseBinary(b));
+  const m = parseBinary(b);
   assert.ok(m.warnings.some((s) => /record budget/.test(s)));
   assert.ok(m.symbols.length < 100000);
 });
@@ -531,87 +529,4 @@ test("UTF-8 text search preserves leading, trailing and whitespace-only queries"
   const bytes = enc.encode(" abc  def ");
   assert.deepEqual(await searchBytes(bytes, " abc ", { mode: "text" }), [0]);
   assert.deepEqual(await searchBytes(bytes, "  ", { mode: "text" }), [4]);
-});
-
-test("ranged ELF tables and terminated names straddle cache pages for all encodings", async () => {
-  const { pagedSource } = await import("../editor/byte-source.mjs");
-  for (const wide of [false, true]) for (const le of [false, true]) {
-    const original = elf(wide, le), bytes = new Uint8Array(200000), view = new DataView(bytes.buffer);
-    bytes.set(original.subarray(0, 128));
-    const stride = wide ? 64 : 40, sections = 65530, names = 131068, symbols = 196607;
-    bytes.set(original.subarray(128, 128 + stride * 4), sections);
-    bytes.set(original.subarray(400, 428), names);
-    bytes.set(original.subarray(448, 448 + (wide ? 24 : 16)), symbols);
-    const put = (offset, value) => wide ? view.setBigUint64(offset, BigInt(value), le) : view.setUint32(offset, value, le);
-    put(wide ? 40 : 32, sections);
-    put(sections + stride + (wide ? 24 : 16), names);
-    put(sections + 3 * stride + (wide ? 24 : 16), symbols);
-    const requests = [];
-    const source = pagedSource({ byteLength: bytes.length, version: 7, async read(offset, length) {
-      requests.push([offset, length]); return bytes.slice(offset, offset + length);
-    } });
-    const parsed = await parseBinary(source);
-    assert.equal(parsed.format, "ELF");
-    assert.equal(parsed.fileSize, 200000);
-    assert.equal(parsed.bits, wide ? 64 : 32);
-    assert.equal(parsed.endian, le ? "LE" : "BE");
-    assert.deepEqual(parsed.warnings, []);
-    assert.deepEqual(parsed.sections.map(({ name, offset }) => ({ name, offset })), [
-      { name: "[section 0]", offset: null },
-      { name: ".shstrtab", offset: 131068 },
-      { name: ".bss", offset: null },
-      { name: ".symtab", offset: 196607 },
-    ]);
-    assert.equal(parsed.symbols.length, 1);
-    assert.equal(parsed.symbols[0].name, "zero");
-    assert.equal(parsed.symbols[0].address, "0x1000");
-    assert.equal(parsed.symbols[0].size, 0);
-    assert.ok(requests.some(([offset]) => offset >= 65536));
-    assert.ok(requests.every(([, length]) => length <= 262144));
-  }
-});
-
-test("ranged archive members retain coordinates and share the parser without payload copies", async () => {
-  const { pagedSource, subSource } = await import("../editor/byte-source.mjs");
-  const bytes = join(enc.encode("!<arch>\n"), arMember("padding/", new Uint8Array(65462)), arMember("object.o/", elf(true, false)));
-  const reads = [];
-  const source = pagedSource({ byteLength: bytes.length, version: 3, async read(offset, length) {
-    reads.push([offset, length]); return bytes.slice(offset, offset + length);
-  } });
-  const archive = await parseBinary(source), member = archive.members[1];
-  assert.equal(member.name, "object.o");
-  assert.equal(member.offset, 65590);
-  assert.equal(member.size, 512);
-  assert.equal("bytes" in member, false);
-  const parsed = await parseBinary(subSource(source, member.offset, member.size));
-  assert.equal(parsed.symbols[0].name, "zero");
-  assert.deepEqual(parsed.warnings, []);
-  assert.ok(reads.every(([, length]) => length <= 65536));
-});
-
-test("KMP and UTF-8 string state survive sequential chunk boundaries and EOF", async () => {
-  const { pagedSource, SCAN_BYTES } = await import("../editor/byte-source.mjs");
-  const bytes = new Uint8Array(SCAN_BYTES * 2 + 9);
-  bytes.set(enc.encode("xyxyxy"), SCAN_BYTES - 3);
-  bytes.set(enc.encode("abc€😀tail"), SCAN_BYTES * 2 - 5);
-  const source = pagedSource({ byteLength: bytes.length, version: 1, async read(offset, length) { return bytes.slice(offset, offset + length); } });
-  assert.deepEqual(await searchBytes(source, "xyxy", { mode: "text" }), [SCAN_BYTES - 3, SCAN_BYTES - 1]);
-  const first = await scanStrings(source, { maxStrings: 1 });
-  assert.equal(first.strings[0].string, "xyxyxy");
-  const second = await scanStrings(source, { startOffset: first.nextOffset, query: "😀tail" });
-  assert.equal(second.strings[0].string, "abc€😀tail");
-  assert.equal(second.strings[0].offset, SCAN_BYTES * 2 - 5);
-  assert.equal(second.nextOffset, null);
-  const incomplete = enc.encode("valid");
-  assert.equal((await scanStrings(join(incomplete, Uint8Array.of(0xe2, 0x82)))).strings[0].string, "valid");
-});
-
-test("string filtering folds Greek final sigma symmetrically across chunk boundaries", async () => {
-  const bytes = new Uint8Array(262160);
-  // Σ begins in one scan chunk and ends in the next; ΟΣ is the recorded spelling.
-  bytes.set(enc.encode("abΟΣcd"), 262139);
-  const result = await scanStrings(bytes, { query: "ος" });
-  assert.deepEqual(result.strings, [{ offset: 262139, string: "abΟΣcd", byteLength: 8, truncated: false }]);
-  const reverse = await scanStrings(enc.encode("abοςcd"), { query: "ΟΣ" });
-  assert.equal(reverse.strings[0].string, "abοςcd");
 });
